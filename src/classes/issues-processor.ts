@@ -559,7 +559,7 @@ export class IssuesProcessor {
         page
       });
       this.statistics?.incrementFetchedItemsCount(issueResult.data.length);
-
+      core.debug(issueResult as unknown as string)
       return issueResult.data.map(
         (issue: Readonly<OctokitIssue>): Issue => new Issue(this.options, issue)
       );

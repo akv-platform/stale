@@ -669,6 +669,7 @@ class IssuesProcessor {
                     page
                 });
                 (_a = this.statistics) === null || _a === void 0 ? void 0 : _a.incrementFetchedItemsCount(issueResult.data.length);
+                core.debug(issueResult);
                 return issueResult.data.map((issue) => new issue_1.Issue(this.options, issue));
             }
             catch (error) {
