@@ -1,7 +1,6 @@
 import {isLabeled} from '../functions/is-labeled';
-import {isPullRequest} from '../functions/is-pull-request';
 import {Assignee} from '../interfaces/assignee';
-import {IIssue, OctokitIssue} from '../interfaces/issue';
+import {IIssue} from '../interfaces/issue';
 import {IIssuesProcessorOptions} from '../interfaces/issues-processor-options';
 import {ILabel} from '../interfaces/label';
 import {IMilestone} from '../interfaces/milestone';
@@ -11,10 +10,11 @@ import {Operations} from './operations';
 export class Issue implements IIssue {
   readonly title: string;
   readonly number: number;
-  created_at: IsoDateString;
-  updated_at: IsoDateString;
+  createdAt: IsoDateString;
+  updatedAt: IsoDateString;
   readonly labels: ILabel[];
-  readonly pull_request: object | null | undefined;
+  readonly isPinned: boolean | null;
+  readonly pullRequest: boolean | null;
   readonly state: string | 'closed' | 'open';
   readonly locked: boolean;
   readonly milestone?: IMilestone | null;
@@ -26,15 +26,16 @@ export class Issue implements IIssue {
 
   constructor(
     options: Readonly<IIssuesProcessorOptions>,
-    issue: Readonly<OctokitIssue> | Readonly<IIssue>
+    issue: Readonly<IIssue>
   ) {
     this._options = options;
     this.title = issue.title;
     this.number = issue.number;
-    this.created_at = issue.created_at;
-    this.updated_at = issue.updated_at;
-    this.labels = mapLabels(issue.labels);
-    this.pull_request = issue.pull_request;
+    this.createdAt = issue.createdAt;
+    this.updatedAt = issue.updatedAt;
+    this.labels = 'nodes' in issue.labels ?  mapLabels(issue.labels.nodes as string[]) : mapLabels(issue.labels);
+    this.isPinned = 'isPinned' in issue ? issue.isPinned : null;
+    this.pullRequest = 'isPinned' in issue ? false : true;
     this.state = issue.state;
     this.locked = issue.locked;
     this.milestone = issue.milestone;
@@ -44,7 +45,7 @@ export class Issue implements IIssue {
   }
 
   get isPullRequest(): boolean {
-    return isPullRequest(this);
+    return !!this.pullRequest;
   }
 
   get staleLabel(): string {

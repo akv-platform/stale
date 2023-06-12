@@ -1,6 +1,7 @@
 import * as core from '@actions/core';
 import {context, getOctokit} from '@actions/github';
 import {GitHub} from '@actions/github/lib/utils';
+import {graphql} from '@octokit/graphql';
 import {Option} from '../enums/option';
 import {getHumanizedDate} from '../functions/dates/get-humanized-date';
 import {isDateMoreRecentThan} from '../functions/dates/is-date-more-recent-than';
@@ -26,6 +27,7 @@ import {Statistics} from './statistics';
 import {LoggerService} from '../services/logger.service';
 import {OctokitIssue} from '../interfaces/issue';
 import {retry} from '@octokit/plugin-retry';
+import {IGraphQlResponse} from '../interfaces/graphqlResponse';
 
 /***
  * Handle processing of issues for staleness/closure.
@@ -63,6 +65,7 @@ export class IssuesProcessor {
 
   readonly operations: StaleOperations;
   readonly client: InstanceType<typeof GitHub>;
+  readonly graphqlClient: typeof graphql;
   readonly options: IIssuesProcessorOptions;
   readonly staleIssues: Issue[] = [];
   readonly closedIssues: Issue[] = [];
@@ -76,6 +79,11 @@ export class IssuesProcessor {
   constructor(options: IIssuesProcessorOptions) {
     this.options = options;
     this.client = getOctokit(this.options.repoToken, undefined, retry);
+    this.graphqlClient = graphql.defaults({
+      headers: {
+        authorization: `token ${this.options.repoToken}`
+      }
+    });
     this.operations = new StaleOperations(this.options);
 
     this._logger.info(
@@ -98,10 +106,15 @@ export class IssuesProcessor {
     }
   }
 
-  async processIssues(page: Readonly<number> = 1): Promise<number> {
+  async processIssues(
+    issueEndCursor: string | null = null, 
+    pullRequestEndCursor: string | null = null, 
+    hasNextIssuePage = true,
+    hasNextPullRequestPage = true): Promise<number> {
     // get the next batch of issues
-    const issues: Issue[] = await this.getIssues(page);
 
+    let issues: Issue[];
+    [issueEndCursor, pullRequestEndCursor, hasNextIssuePage, hasNextPullRequestPage, issues] = await this.getIssues(issueEndCursor, pullRequestEndCursor, hasNextIssuePage, hasNextPullRequestPage);
     if (issues.length <= 0) {
       this._logger.info(
         LoggerService.green(`No more issues found to process. Exiting...`)
@@ -115,7 +128,7 @@ export class IssuesProcessor {
       this._logger.info(
         `${LoggerService.yellow(
           'Processing the batch of issues '
-        )} ${LoggerService.cyan(`#${page}`)} ${LoggerService.yellow(
+        )} ${LoggerService.cyan(`#${1}`)} ${LoggerService.yellow(
           ' containing '
         )} ${LoggerService.cyan(issues.length)} ${LoggerService.yellow(
           ` issue${issues.length > 1 ? 's' : ''}...`
@@ -173,12 +186,12 @@ export class IssuesProcessor {
 
     this._logger.info(
       `${LoggerService.green('Batch ')} ${LoggerService.cyan(
-        `#${page}`
+        `#${1}`
       )} ${LoggerService.green(' processed.')}`
     );
 
     // Do the next batch
-    return this.processIssues(page + 1);
+    return this.processIssues(issueEndCursor, pullRequestEndCursor, hasNextIssuePage, hasNextPullRequestPage);
   }
 
   async processIssue(
@@ -192,7 +205,7 @@ export class IssuesProcessor {
     const issueLogger: IssueLogger = new IssueLogger(issue);
     issueLogger.info(
       `Found this $$type last updated at: ${LoggerService.cyan(
-        issue.updated_at
+        issue.createdAt
       )}`
     );
 
@@ -215,6 +228,7 @@ export class IssuesProcessor {
     const daysBeforeStale: number = issue.isPullRequest
       ? this._getDaysBeforePrStale()
       : this._getDaysBeforeIssueStale();
+    const isPinned: boolean | null = issue.isPinned;
 
     if (issue.state === 'closed') {
       issueLogger.info(`Skipping this $$type because it is closed`);
@@ -226,6 +240,12 @@ export class IssuesProcessor {
       issueLogger.info(`Skipping this $$type because it is locked`);
       IssuesProcessor._endIssueProcessing(issue);
       return; // Don't process locked issues
+    }
+
+    if (issue.isPinned) {
+      issueLogger.info(`Skipping this issue beacause it is pinned`);
+      IssuesProcessor._endIssueProcessing(issue);
+      return; // Don't process pinned issues
     }
 
     if (this._isIncludeOnlyAssigned(issue)) {
@@ -287,6 +307,7 @@ export class IssuesProcessor {
       `Days before $$type stale: ${LoggerService.cyan(daysBeforeStale)}`
     );
 
+    core.debug(`is_pinned: ${isPinned}}`)
     const shouldMarkAsStale: boolean = shouldMarkWhenStale(daysBeforeStale);
 
     // Try to remove the close label when not close/locked issue or PR
@@ -294,7 +315,7 @@ export class IssuesProcessor {
 
     if (this.options.startDate) {
       const startDate: Date = new Date(this.options.startDate);
-      const createdAt: Date = new Date(issue.created_at);
+      const createdAt: Date = new Date(issue.createdAt);
 
       issueLogger.info(
         `A start date was specified for the ${getHumanizedDate(
@@ -314,7 +335,7 @@ export class IssuesProcessor {
       issueLogger.info(
         `$$type created the ${getHumanizedDate(
           createdAt
-        )} (${LoggerService.cyan(issue.created_at)})`
+        )} (${LoggerService.cyan(issue.createdAt)})`
       );
 
       if (!isDateMoreRecentThan(createdAt, startDate)) {
@@ -445,14 +466,14 @@ export class IssuesProcessor {
       // Ignore the last update and only use the creation date
       if (shouldIgnoreUpdates) {
         shouldBeStale = !IssuesProcessor._updatedSince(
-          issue.created_at,
+          issue.createdAt,
           daysBeforeStale
         );
       }
       // Use the last update to check if we need to stale
       else {
         shouldBeStale = !IssuesProcessor._updatedSince(
-          issue.updated_at,
+          issue.updatedAt,
           daysBeforeStale
         );
       }
@@ -461,14 +482,14 @@ export class IssuesProcessor {
         if (shouldIgnoreUpdates) {
           issueLogger.info(
             `This $$type should be stale based on the creation date the ${getHumanizedDate(
-              new Date(issue.created_at)
-            )} (${LoggerService.cyan(issue.created_at)})`
+              new Date(issue.updatedAt)
+            )} (${LoggerService.cyan(issue.createdAt)})`
           );
         } else {
           issueLogger.info(
             `This $$type should be stale based on the last update date the ${getHumanizedDate(
-              new Date(issue.updated_at)
-            )} (${LoggerService.cyan(issue.updated_at)})`
+              new Date(issue.updatedAt)
+            )} (${LoggerService.cyan(issue.updatedAt)})`
           );
         }
 
@@ -493,14 +514,14 @@ export class IssuesProcessor {
         if (shouldIgnoreUpdates) {
           issueLogger.info(
             `This $$type should not be stale based on the creation date the ${getHumanizedDate(
-              new Date(issue.created_at)
-            )} (${LoggerService.cyan(issue.created_at)})`
+              new Date(issue.createdAt)
+            )} (${LoggerService.cyan(issue.createdAt)})`
           );
         } else {
           issueLogger.info(
             `This $$type should not be stale based on the last update date the ${getHumanizedDate(
-              new Date(issue.updated_at)
-            )} (${LoggerService.cyan(issue.updated_at)})`
+              new Date(issue.updatedAt)
+            )} (${LoggerService.cyan(issue.updatedAt)})`
           );
         }
       }
@@ -546,23 +567,96 @@ export class IssuesProcessor {
     }
   }
 
-  // grab issues from github in batches of 100
-  async getIssues(page: number): Promise<Issue[]> {
+  async getIssues(
+    issueEndCursor: string | null, 
+    pullRequestEndCursor: string | null, 
+    hasNextIssuePage: boolean,
+    hasNextPullRequestPage: boolean)
+    : Promise<[string | null, string | null, boolean, boolean, Issue[]]> {
     try {
+      const query = `
+      query ($owner: String!, $repo: String!, $issueEndCursor: String, $pullRequestEndCursor: String) {
+        repository(owner: $owner, name: $repo) {
+          issues(first: 100, after: $issueEndCursor, states: OPEN) {
+            nodes {
+              title
+              number
+              createdAt
+              updatedAt
+              labels(first: 100) {
+                nodes {
+                  name
+                }
+              }
+              isPinned
+              state
+              locked
+              milestone {
+                title
+              }
+              assignees(first: 100) {
+                nodes {
+                  login
+                }
+              }
+            }
+            pageInfo {
+              endCursor
+              hasNextPage
+            }
+          }
+          pullRequests(first: 100, after: $pullRequestEndCursor, states: OPEN) {
+            nodes {
+              title
+              number
+              createdAt
+              updatedAt
+              labels(first: 100) {
+                nodes {
+                  name
+                }
+              }
+              state
+              locked
+              milestone {
+                title
+              }
+              assignees(first: 100) {
+                nodes {
+                  login
+                }
+              }
+            }
+            pageInfo {
+              endCursor
+              hasNextPage
+            }
+          }
+        }
+      }
+      `;
       this.operations.consumeOperation();
-      const issueResult = await this.client.rest.issues.listForRepo({
-        owner: context.repo.owner,
-        repo: context.repo.repo,
-        state: 'open',
-        per_page: 100,
-        direction: this.options.ascending ? 'asc' : 'desc',
-        page
-      });
-      this.statistics?.incrementFetchedItemsCount(issueResult.data.length);
-      core.debug(issueResult as unknown as string)
-      return issueResult.data.map(
-        (issue: Readonly<OctokitIssue>): Issue => new Issue(this.options, issue)
-      );
+      const issues: Issue[] = [];
+      if (hasNextIssuePage || hasNextPullRequestPage) {
+        const resp: IGraphQlResponse = await this.graphqlClient(query, {
+          owner: context.repo.owner,
+          repo: context.repo.repo,
+          issueEndCursor,
+          pullRequestEndCursor
+        });
+        hasNextIssuePage = resp.repository.issues.pageInfo.hasNextPage;
+        hasNextPullRequestPage = resp.repository.pullRequests.pageInfo.hasNextPage;
+        issueEndCursor = resp.repository.issues.pageInfo.endCursor;
+        pullRequestEndCursor = resp.repository.pullRequests.pageInfo.endCursor;
+        for (const issue of resp.repository.issues.nodes.map(node => new Issue(this.options, node))) {
+          issues.push(issue)
+        }
+        for (const pullRequest of resp.repository.pullRequests.nodes.map(node => new Issue(this.options, node))) {
+          issues.push(pullRequest)
+        }
+        this.statistics?.incrementFetchedItemsCount(issues.length)
+    }
+      return [issueEndCursor, pullRequestEndCursor, hasNextIssuePage, hasNextPullRequestPage, issues];
     } catch (error) {
       throw Error(`Getting issues was blocked by the error: ${error.message}`);
     }
@@ -636,7 +730,7 @@ export class IssuesProcessor {
   ) {
     const issueLogger: IssueLogger = new IssueLogger(issue);
     const markedStaleOn: string =
-      (await this.getLabelCreationDate(issue, staleLabel)) || issue.updated_at;
+      (await this.getLabelCreationDate(issue, staleLabel)) || issue.updatedAt;
     issueLogger.info(
       `$$type marked stale on: ${LoggerService.cyan(markedStaleOn)}`
     );
@@ -689,7 +783,7 @@ export class IssuesProcessor {
     // The issue.updated_at and markedStaleOn are not always exactly in sync (they can be off by a second or 2)
     // isDateMoreRecentThan makes sure they are not the same date within a certain tolerance (15 seconds in this case)
     const issueHasUpdateSinceStale = isDateMoreRecentThan(
-      new Date(issue.updated_at),
+      new Date(issue.updatedAt),
       new Date(markedStaleOn),
       15
     );
@@ -730,7 +824,7 @@ export class IssuesProcessor {
     }
 
     const issueHasUpdateInCloseWindow: boolean = IssuesProcessor._updatedSince(
-      issue.updated_at,
+      issue.updatedAt,
       daysBeforeClose
     );
     issueLogger.info(
@@ -742,12 +836,12 @@ export class IssuesProcessor {
     if (!issueHasCommentsSinceStale && !issueHasUpdateInCloseWindow) {
       issueLogger.info(
         `Closing $$type because it was last updated on: ${LoggerService.cyan(
-          issue.updated_at
+          issue.updatedAt
         )}`
       );
       await this._closeIssue(issue, closeMessage, closeLabel);
 
-      if (this.options.deleteBranch && issue.pull_request) {
+      if (this.options.deleteBranch && issue.isPullRequest) {
         issueLogger.info(
           `Deleting the branch since the option ${issueLogger.createOptionLink(
             Option.DeleteBranch
@@ -813,7 +907,7 @@ export class IssuesProcessor {
     // if the issue is being marked stale, the updated date should be changed to right now
     // so that close calculations work correctly
     const newUpdatedAtDate: Date = new Date();
-    issue.updated_at = newUpdatedAtDate.toString();
+    issue.updatedAt = newUpdatedAtDate.toString();
 
     if (!skipMessage) {
       try {

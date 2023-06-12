@@ -261,7 +261,6 @@ exports.IgnoreUpdates = IgnoreUpdates;
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.Issue = void 0;
 const is_labeled_1 = __nccwpck_require__(6792);
-const is_pull_request_1 = __nccwpck_require__(5400);
 const operations_1 = __nccwpck_require__(7957);
 class Issue {
     constructor(options, issue) {
@@ -269,10 +268,11 @@ class Issue {
         this._options = options;
         this.title = issue.title;
         this.number = issue.number;
-        this.created_at = issue.created_at;
-        this.updated_at = issue.updated_at;
-        this.labels = mapLabels(issue.labels);
-        this.pull_request = issue.pull_request;
+        this.createdAt = issue.createdAt;
+        this.updatedAt = issue.updatedAt;
+        this.labels = 'nodes' in issue.labels ? mapLabels(issue.labels.nodes) : mapLabels(issue.labels);
+        this.isPinned = 'isPinned' in issue ? issue.isPinned : null;
+        this.pullRequest = 'isPinned' in issue ? false : true;
         this.state = issue.state;
         this.locked = issue.locked;
         this.milestone = issue.milestone;
@@ -281,7 +281,7 @@ class Issue {
         this.markedStaleThisRun = false;
     }
     get isPullRequest() {
-        return (0, is_pull_request_1.isPullRequest)(this);
+        return !!this.pullRequest;
     }
     get staleLabel() {
         return this._getStaleLabel();
@@ -351,6 +351,7 @@ Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.IssuesProcessor = void 0;
 const core = __importStar(__nccwpck_require__(2186));
 const github_1 = __nccwpck_require__(5438);
+const graphql_1 = __nccwpck_require__(8467);
 const option_1 = __nccwpck_require__(5931);
 const get_humanized_date_1 = __nccwpck_require__(965);
 const is_date_more_recent_than_1 = __nccwpck_require__(1473);
@@ -400,6 +401,11 @@ class IssuesProcessor {
         this._logger = new logger_1.Logger();
         this.options = options;
         this.client = (0, github_1.getOctokit)(this.options.repoToken, undefined, plugin_retry_1.retry);
+        this.graphqlClient = graphql_1.graphql.defaults({
+            headers: {
+                authorization: `token ${this.options.repoToken}`
+            }
+        });
         this.operations = new stale_operations_1.StaleOperations(this.options);
         this._logger.info(logger_service_1.LoggerService.yellow(`Starting the stale action process...`));
         if (this.options.debugOnly) {
@@ -410,18 +416,19 @@ class IssuesProcessor {
             this.statistics = new statistics_1.Statistics();
         }
     }
-    processIssues(page = 1) {
+    processIssues(issueEndCursor = null, pullRequestEndCursor = null, hasNextIssuePage = true, hasNextPullRequestPage = true) {
         var _a, _b;
         return __awaiter(this, void 0, void 0, function* () {
             // get the next batch of issues
-            const issues = yield this.getIssues(page);
+            let issues;
+            [issueEndCursor, pullRequestEndCursor, hasNextIssuePage, hasNextPullRequestPage, issues] = yield this.getIssues(issueEndCursor, pullRequestEndCursor, hasNextIssuePage, hasNextPullRequestPage);
             if (issues.length <= 0) {
                 this._logger.info(logger_service_1.LoggerService.green(`No more issues found to process. Exiting...`));
                 (_a = this.statistics) === null || _a === void 0 ? void 0 : _a.setOperationsCount(this.operations.getConsumedOperationsCount()).logStats();
                 return this.operations.getRemainingOperationsCount();
             }
             else {
-                this._logger.info(`${logger_service_1.LoggerService.yellow('Processing the batch of issues ')} ${logger_service_1.LoggerService.cyan(`#${page}`)} ${logger_service_1.LoggerService.yellow(' containing ')} ${logger_service_1.LoggerService.cyan(issues.length)} ${logger_service_1.LoggerService.yellow(` issue${issues.length > 1 ? 's' : ''}...`)}`);
+                this._logger.info(`${logger_service_1.LoggerService.yellow('Processing the batch of issues ')} ${logger_service_1.LoggerService.cyan(`#${1}`)} ${logger_service_1.LoggerService.yellow(' containing ')} ${logger_service_1.LoggerService.cyan(issues.length)} ${logger_service_1.LoggerService.yellow(` issue${issues.length > 1 ? 's' : ''}...`)}`);
             }
             const labelsToRemoveWhenStale = (0, words_to_list_1.wordsToList)(this.options.labelsToRemoveWhenStale);
             const labelsToAddWhenUnstale = (0, words_to_list_1.wordsToList)(this.options.labelsToAddWhenUnstale);
@@ -442,9 +449,9 @@ class IssuesProcessor {
                 (_b = this.statistics) === null || _b === void 0 ? void 0 : _b.setOperationsCount(this.operations.getConsumedOperationsCount()).logStats();
                 return 0;
             }
-            this._logger.info(`${logger_service_1.LoggerService.green('Batch ')} ${logger_service_1.LoggerService.cyan(`#${page}`)} ${logger_service_1.LoggerService.green(' processed.')}`);
+            this._logger.info(`${logger_service_1.LoggerService.green('Batch ')} ${logger_service_1.LoggerService.cyan(`#${1}`)} ${logger_service_1.LoggerService.green(' processed.')}`);
             // Do the next batch
-            return this.processIssues(page + 1);
+            return this.processIssues(issueEndCursor, pullRequestEndCursor, hasNextIssuePage, hasNextPullRequestPage);
         });
     }
     processIssue(issue, labelsToAddWhenUnstale, labelsToRemoveWhenUnstale, labelsToRemoveWhenStale) {
@@ -452,7 +459,7 @@ class IssuesProcessor {
         return __awaiter(this, void 0, void 0, function* () {
             (_a = this.statistics) === null || _a === void 0 ? void 0 : _a.incrementProcessedItemsCount(issue);
             const issueLogger = new issue_logger_1.IssueLogger(issue);
-            issueLogger.info(`Found this $$type last updated at: ${logger_service_1.LoggerService.cyan(issue.updated_at)}`);
+            issueLogger.info(`Found this $$type last updated at: ${logger_service_1.LoggerService.cyan(issue.createdAt)}`);
             // calculate string based messages for this issue
             const staleMessage = issue.isPullRequest
                 ? this.options.stalePrMessage
@@ -472,6 +479,7 @@ class IssuesProcessor {
             const daysBeforeStale = issue.isPullRequest
                 ? this._getDaysBeforePrStale()
                 : this._getDaysBeforeIssueStale();
+            const isPinned = issue.isPinned;
             if (issue.state === 'closed') {
                 issueLogger.info(`Skipping this $$type because it is closed`);
                 IssuesProcessor._endIssueProcessing(issue);
@@ -481,6 +489,11 @@ class IssuesProcessor {
                 issueLogger.info(`Skipping this $$type because it is locked`);
                 IssuesProcessor._endIssueProcessing(issue);
                 return; // Don't process locked issues
+            }
+            if (issue.isPinned) {
+                issueLogger.info(`Skipping this issue beacause it is pinned`);
+                IssuesProcessor._endIssueProcessing(issue);
+                return; // Don't process pinned issues
             }
             if (this._isIncludeOnlyAssigned(issue)) {
                 issueLogger.info(`Skipping this $$type because its assignees list is empty`);
@@ -508,12 +521,13 @@ class IssuesProcessor {
                 issueLogger.info(logger_service_1.LoggerService.white('└──'), `Continuing the process for this $$type`);
             }
             issueLogger.info(`Days before $$type stale: ${logger_service_1.LoggerService.cyan(daysBeforeStale)}`);
+            core.debug(`is_pinned: ${isPinned}}`);
             const shouldMarkAsStale = (0, should_mark_when_stale_1.shouldMarkWhenStale)(daysBeforeStale);
             // Try to remove the close label when not close/locked issue or PR
             yield this._removeCloseLabel(issue, closeLabel);
             if (this.options.startDate) {
                 const startDate = new Date(this.options.startDate);
-                const createdAt = new Date(issue.created_at);
+                const createdAt = new Date(issue.createdAt);
                 issueLogger.info(`A start date was specified for the ${(0, get_humanized_date_1.getHumanizedDate)(startDate)} (${logger_service_1.LoggerService.cyan(this.options.startDate)})`);
                 // Expecting that GitHub will always set a creation date on the issues and PRs
                 // But you never know!
@@ -521,7 +535,7 @@ class IssuesProcessor {
                     IssuesProcessor._endIssueProcessing(issue);
                     core.setFailed(new Error(`Invalid issue field: "created_at". Expected a valid date`));
                 }
-                issueLogger.info(`$$type created the ${(0, get_humanized_date_1.getHumanizedDate)(createdAt)} (${logger_service_1.LoggerService.cyan(issue.created_at)})`);
+                issueLogger.info(`$$type created the ${(0, get_humanized_date_1.getHumanizedDate)(createdAt)} (${logger_service_1.LoggerService.cyan(issue.createdAt)})`);
                 if (!(0, is_date_more_recent_than_1.isDateMoreRecentThan)(createdAt, startDate)) {
                     issueLogger.info(`Skipping this $$type because it was created before the specified start date`);
                     IssuesProcessor._endIssueProcessing(issue);
@@ -591,18 +605,18 @@ class IssuesProcessor {
                 let shouldBeStale;
                 // Ignore the last update and only use the creation date
                 if (shouldIgnoreUpdates) {
-                    shouldBeStale = !IssuesProcessor._updatedSince(issue.created_at, daysBeforeStale);
+                    shouldBeStale = !IssuesProcessor._updatedSince(issue.createdAt, daysBeforeStale);
                 }
                 // Use the last update to check if we need to stale
                 else {
-                    shouldBeStale = !IssuesProcessor._updatedSince(issue.updated_at, daysBeforeStale);
+                    shouldBeStale = !IssuesProcessor._updatedSince(issue.updatedAt, daysBeforeStale);
                 }
                 if (shouldBeStale) {
                     if (shouldIgnoreUpdates) {
-                        issueLogger.info(`This $$type should be stale based on the creation date the ${(0, get_humanized_date_1.getHumanizedDate)(new Date(issue.created_at))} (${logger_service_1.LoggerService.cyan(issue.created_at)})`);
+                        issueLogger.info(`This $$type should be stale based on the creation date the ${(0, get_humanized_date_1.getHumanizedDate)(new Date(issue.updatedAt))} (${logger_service_1.LoggerService.cyan(issue.createdAt)})`);
                     }
                     else {
-                        issueLogger.info(`This $$type should be stale based on the last update date the ${(0, get_humanized_date_1.getHumanizedDate)(new Date(issue.updated_at))} (${logger_service_1.LoggerService.cyan(issue.updated_at)})`);
+                        issueLogger.info(`This $$type should be stale based on the last update date the ${(0, get_humanized_date_1.getHumanizedDate)(new Date(issue.updatedAt))} (${logger_service_1.LoggerService.cyan(issue.updatedAt)})`);
                     }
                     if (shouldMarkAsStale) {
                         issueLogger.info(`This $$type should be marked as stale based on the option ${issueLogger.createOptionLink(this._getDaysBeforeStaleUsedOptionName(issue))} (${logger_service_1.LoggerService.cyan(daysBeforeStale)})`);
@@ -617,10 +631,10 @@ class IssuesProcessor {
                 }
                 else {
                     if (shouldIgnoreUpdates) {
-                        issueLogger.info(`This $$type should not be stale based on the creation date the ${(0, get_humanized_date_1.getHumanizedDate)(new Date(issue.created_at))} (${logger_service_1.LoggerService.cyan(issue.created_at)})`);
+                        issueLogger.info(`This $$type should not be stale based on the creation date the ${(0, get_humanized_date_1.getHumanizedDate)(new Date(issue.createdAt))} (${logger_service_1.LoggerService.cyan(issue.createdAt)})`);
                     }
                     else {
-                        issueLogger.info(`This $$type should not be stale based on the last update date the ${(0, get_humanized_date_1.getHumanizedDate)(new Date(issue.updated_at))} (${logger_service_1.LoggerService.cyan(issue.updated_at)})`);
+                        issueLogger.info(`This $$type should not be stale based on the last update date the ${(0, get_humanized_date_1.getHumanizedDate)(new Date(issue.updatedAt))} (${logger_service_1.LoggerService.cyan(issue.updatedAt)})`);
                     }
                 }
             }
@@ -654,23 +668,93 @@ class IssuesProcessor {
             }
         });
     }
-    // grab issues from github in batches of 100
-    getIssues(page) {
+    getIssues(issueEndCursor, pullRequestEndCursor, hasNextIssuePage, hasNextPullRequestPage) {
         var _a;
         return __awaiter(this, void 0, void 0, function* () {
             try {
+                const query = `
+      query ($owner: String!, $repo: String!, $issueEndCursor: String, $pullRequestEndCursor: String) {
+        repository(owner: $owner, name: $repo) {
+          issues(first: 100, after: $issueEndCursor, states: OPEN) {
+            nodes {
+              title
+              number
+              createdAt
+              updatedAt
+              labels(first: 100) {
+                nodes {
+                  name
+                }
+              }
+              isPinned
+              state
+              locked
+              milestone {
+                title
+              }
+              assignees(first: 100) {
+                nodes {
+                  login
+                }
+              }
+            }
+            pageInfo {
+              endCursor
+              hasNextPage
+            }
+          }
+          pullRequests(first: 100, after: $pullRequestEndCursor, states: OPEN) {
+            nodes {
+              title
+              number
+              createdAt
+              updatedAt
+              labels(first: 100) {
+                nodes {
+                  name
+                }
+              }
+              state
+              locked
+              milestone {
+                title
+              }
+              assignees(first: 100) {
+                nodes {
+                  login
+                }
+              }
+            }
+            pageInfo {
+              endCursor
+              hasNextPage
+            }
+          }
+        }
+      }
+      `;
                 this.operations.consumeOperation();
-                const issueResult = yield this.client.rest.issues.listForRepo({
-                    owner: github_1.context.repo.owner,
-                    repo: github_1.context.repo.repo,
-                    state: 'open',
-                    per_page: 100,
-                    direction: this.options.ascending ? 'asc' : 'desc',
-                    page
-                });
-                (_a = this.statistics) === null || _a === void 0 ? void 0 : _a.incrementFetchedItemsCount(issueResult.data.length);
-                core.debug(issueResult);
-                return issueResult.data.map((issue) => new issue_1.Issue(this.options, issue));
+                const issues = [];
+                if (hasNextIssuePage || hasNextPullRequestPage) {
+                    const resp = yield this.graphqlClient(query, {
+                        owner: github_1.context.repo.owner,
+                        repo: github_1.context.repo.repo,
+                        issueEndCursor,
+                        pullRequestEndCursor
+                    });
+                    hasNextIssuePage = resp.repository.issues.pageInfo.hasNextPage;
+                    hasNextPullRequestPage = resp.repository.pullRequests.pageInfo.hasNextPage;
+                    issueEndCursor = resp.repository.issues.pageInfo.endCursor;
+                    pullRequestEndCursor = resp.repository.pullRequests.pageInfo.endCursor;
+                    for (const issue of resp.repository.issues.nodes.map(node => new issue_1.Issue(this.options, node))) {
+                        issues.push(issue);
+                    }
+                    for (const pullRequest of resp.repository.pullRequests.nodes.map(node => new issue_1.Issue(this.options, node))) {
+                        issues.push(pullRequest);
+                    }
+                    (_a = this.statistics) === null || _a === void 0 ? void 0 : _a.incrementFetchedItemsCount(issues.length);
+                }
+                return [issueEndCursor, pullRequestEndCursor, hasNextIssuePage, hasNextPullRequestPage, issues];
             }
             catch (error) {
                 throw Error(`Getting issues was blocked by the error: ${error.message}`);
@@ -726,7 +810,7 @@ class IssuesProcessor {
     _processStaleIssue(issue, staleLabel, staleMessage, labelsToAddWhenUnstale, labelsToRemoveWhenUnstale, labelsToRemoveWhenStale, closeMessage, closeLabel) {
         return __awaiter(this, void 0, void 0, function* () {
             const issueLogger = new issue_logger_1.IssueLogger(issue);
-            const markedStaleOn = (yield this.getLabelCreationDate(issue, staleLabel)) || issue.updated_at;
+            const markedStaleOn = (yield this.getLabelCreationDate(issue, staleLabel)) || issue.updatedAt;
             issueLogger.info(`$$type marked stale on: ${logger_service_1.LoggerService.cyan(markedStaleOn)}`);
             const issueHasCommentsSinceStale = yield this._hasCommentsSince(issue, markedStaleOn, staleMessage);
             issueLogger.info(`$$type has been commented on: ${logger_service_1.LoggerService.cyan(issueHasCommentsSinceStale)}`);
@@ -748,7 +832,7 @@ class IssuesProcessor {
             }
             // The issue.updated_at and markedStaleOn are not always exactly in sync (they can be off by a second or 2)
             // isDateMoreRecentThan makes sure they are not the same date within a certain tolerance (15 seconds in this case)
-            const issueHasUpdateSinceStale = (0, is_date_more_recent_than_1.isDateMoreRecentThan)(new Date(issue.updated_at), new Date(markedStaleOn), 15);
+            const issueHasUpdateSinceStale = (0, is_date_more_recent_than_1.isDateMoreRecentThan)(new Date(issue.updatedAt), new Date(markedStaleOn), 15);
             issueLogger.info(`$$type has been updated since it was marked stale: ${logger_service_1.LoggerService.cyan(issueHasUpdateSinceStale)}`);
             // Should we un-stale this issue?
             if (shouldRemoveStaleWhenUpdated &&
@@ -766,12 +850,12 @@ class IssuesProcessor {
             if (daysBeforeClose < 0) {
                 return; // Nothing to do because we aren't closing stale issues
             }
-            const issueHasUpdateInCloseWindow = IssuesProcessor._updatedSince(issue.updated_at, daysBeforeClose);
+            const issueHasUpdateInCloseWindow = IssuesProcessor._updatedSince(issue.updatedAt, daysBeforeClose);
             issueLogger.info(`$$type has been updated in the last ${daysBeforeClose} days: ${logger_service_1.LoggerService.cyan(issueHasUpdateInCloseWindow)}`);
             if (!issueHasCommentsSinceStale && !issueHasUpdateInCloseWindow) {
-                issueLogger.info(`Closing $$type because it was last updated on: ${logger_service_1.LoggerService.cyan(issue.updated_at)}`);
+                issueLogger.info(`Closing $$type because it was last updated on: ${logger_service_1.LoggerService.cyan(issue.updatedAt)}`);
                 yield this._closeIssue(issue, closeMessage, closeLabel);
-                if (this.options.deleteBranch && issue.pull_request) {
+                if (this.options.deleteBranch && issue.isPullRequest) {
                     issueLogger.info(`Deleting the branch since the option ${issueLogger.createOptionLink(option_1.Option.DeleteBranch)} is enabled`);
                     yield this._deleteBranch(issue);
                     this.deletedBranchIssues.push(issue);
@@ -812,7 +896,7 @@ class IssuesProcessor {
             // if the issue is being marked stale, the updated date should be changed to right now
             // so that close calculations work correctly
             const newUpdatedAtDate = new Date();
-            issue.updated_at = newUpdatedAtDate.toString();
+            issue.updatedAt = newUpdatedAtDate.toString();
             if (!skipMessage) {
                 try {
                     this._consumeIssueOperation(issue);
@@ -2073,21 +2157,6 @@ function isLabeled(issue, label) {
     });
 }
 exports.isLabeled = isLabeled;
-
-
-/***/ }),
-
-/***/ 5400:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.isPullRequest = void 0;
-function isPullRequest(issue) {
-    return !!issue.pull_request;
-}
-exports.isPullRequest = isPullRequest;
 
 
 /***/ }),
@@ -6064,6 +6133,512 @@ exports.checkBypass = checkBypass;
 
 /***/ }),
 
+/***/ 9440:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+
+var isPlainObject = __nccwpck_require__(3287);
+var universalUserAgent = __nccwpck_require__(5030);
+
+function lowercaseKeys(object) {
+  if (!object) {
+    return {};
+  }
+  return Object.keys(object).reduce((newObj, key) => {
+    newObj[key.toLowerCase()] = object[key];
+    return newObj;
+  }, {});
+}
+
+function mergeDeep(defaults, options) {
+  const result = Object.assign({}, defaults);
+  Object.keys(options).forEach(key => {
+    if (isPlainObject.isPlainObject(options[key])) {
+      if (!(key in defaults)) Object.assign(result, {
+        [key]: options[key]
+      });else result[key] = mergeDeep(defaults[key], options[key]);
+    } else {
+      Object.assign(result, {
+        [key]: options[key]
+      });
+    }
+  });
+  return result;
+}
+
+function removeUndefinedProperties(obj) {
+  for (const key in obj) {
+    if (obj[key] === undefined) {
+      delete obj[key];
+    }
+  }
+  return obj;
+}
+
+function merge(defaults, route, options) {
+  if (typeof route === "string") {
+    let [method, url] = route.split(" ");
+    options = Object.assign(url ? {
+      method,
+      url
+    } : {
+      url: method
+    }, options);
+  } else {
+    options = Object.assign({}, route);
+  }
+  // lowercase header names before merging with defaults to avoid duplicates
+  options.headers = lowercaseKeys(options.headers);
+  // remove properties with undefined values before merging
+  removeUndefinedProperties(options);
+  removeUndefinedProperties(options.headers);
+  const mergedOptions = mergeDeep(defaults || {}, options);
+  // mediaType.previews arrays are merged, instead of overwritten
+  if (defaults && defaults.mediaType.previews.length) {
+    mergedOptions.mediaType.previews = defaults.mediaType.previews.filter(preview => !mergedOptions.mediaType.previews.includes(preview)).concat(mergedOptions.mediaType.previews);
+  }
+  mergedOptions.mediaType.previews = mergedOptions.mediaType.previews.map(preview => preview.replace(/-preview/, ""));
+  return mergedOptions;
+}
+
+function addQueryParameters(url, parameters) {
+  const separator = /\?/.test(url) ? "&" : "?";
+  const names = Object.keys(parameters);
+  if (names.length === 0) {
+    return url;
+  }
+  return url + separator + names.map(name => {
+    if (name === "q") {
+      return "q=" + parameters.q.split("+").map(encodeURIComponent).join("+");
+    }
+    return `${name}=${encodeURIComponent(parameters[name])}`;
+  }).join("&");
+}
+
+const urlVariableRegex = /\{[^}]+\}/g;
+function removeNonChars(variableName) {
+  return variableName.replace(/^\W+|\W+$/g, "").split(/,/);
+}
+function extractUrlVariableNames(url) {
+  const matches = url.match(urlVariableRegex);
+  if (!matches) {
+    return [];
+  }
+  return matches.map(removeNonChars).reduce((a, b) => a.concat(b), []);
+}
+
+function omit(object, keysToOmit) {
+  return Object.keys(object).filter(option => !keysToOmit.includes(option)).reduce((obj, key) => {
+    obj[key] = object[key];
+    return obj;
+  }, {});
+}
+
+// Based on https://github.com/bramstein/url-template, licensed under BSD
+// TODO: create separate package.
+//
+// Copyright (c) 2012-2014, Bram Stein
+// All rights reserved.
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions
+// are met:
+//  1. Redistributions of source code must retain the above copyright
+//     notice, this list of conditions and the following disclaimer.
+//  2. Redistributions in binary form must reproduce the above copyright
+//     notice, this list of conditions and the following disclaimer in the
+//     documentation and/or other materials provided with the distribution.
+//  3. The name of the author may not be used to endorse or promote products
+//     derived from this software without specific prior written permission.
+// THIS SOFTWARE IS PROVIDED BY THE AUTHOR "AS IS" AND ANY EXPRESS OR IMPLIED
+// WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+// MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
+// EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+// INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+// BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
+// OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+// NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+// EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+/* istanbul ignore file */
+function encodeReserved(str) {
+  return str.split(/(%[0-9A-Fa-f]{2})/g).map(function (part) {
+    if (!/%[0-9A-Fa-f]/.test(part)) {
+      part = encodeURI(part).replace(/%5B/g, "[").replace(/%5D/g, "]");
+    }
+    return part;
+  }).join("");
+}
+function encodeUnreserved(str) {
+  return encodeURIComponent(str).replace(/[!'()*]/g, function (c) {
+    return "%" + c.charCodeAt(0).toString(16).toUpperCase();
+  });
+}
+function encodeValue(operator, value, key) {
+  value = operator === "+" || operator === "#" ? encodeReserved(value) : encodeUnreserved(value);
+  if (key) {
+    return encodeUnreserved(key) + "=" + value;
+  } else {
+    return value;
+  }
+}
+function isDefined(value) {
+  return value !== undefined && value !== null;
+}
+function isKeyOperator(operator) {
+  return operator === ";" || operator === "&" || operator === "?";
+}
+function getValues(context, operator, key, modifier) {
+  var value = context[key],
+    result = [];
+  if (isDefined(value) && value !== "") {
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      value = value.toString();
+      if (modifier && modifier !== "*") {
+        value = value.substring(0, parseInt(modifier, 10));
+      }
+      result.push(encodeValue(operator, value, isKeyOperator(operator) ? key : ""));
+    } else {
+      if (modifier === "*") {
+        if (Array.isArray(value)) {
+          value.filter(isDefined).forEach(function (value) {
+            result.push(encodeValue(operator, value, isKeyOperator(operator) ? key : ""));
+          });
+        } else {
+          Object.keys(value).forEach(function (k) {
+            if (isDefined(value[k])) {
+              result.push(encodeValue(operator, value[k], k));
+            }
+          });
+        }
+      } else {
+        const tmp = [];
+        if (Array.isArray(value)) {
+          value.filter(isDefined).forEach(function (value) {
+            tmp.push(encodeValue(operator, value));
+          });
+        } else {
+          Object.keys(value).forEach(function (k) {
+            if (isDefined(value[k])) {
+              tmp.push(encodeUnreserved(k));
+              tmp.push(encodeValue(operator, value[k].toString()));
+            }
+          });
+        }
+        if (isKeyOperator(operator)) {
+          result.push(encodeUnreserved(key) + "=" + tmp.join(","));
+        } else if (tmp.length !== 0) {
+          result.push(tmp.join(","));
+        }
+      }
+    }
+  } else {
+    if (operator === ";") {
+      if (isDefined(value)) {
+        result.push(encodeUnreserved(key));
+      }
+    } else if (value === "" && (operator === "&" || operator === "?")) {
+      result.push(encodeUnreserved(key) + "=");
+    } else if (value === "") {
+      result.push("");
+    }
+  }
+  return result;
+}
+function parseUrl(template) {
+  return {
+    expand: expand.bind(null, template)
+  };
+}
+function expand(template, context) {
+  var operators = ["+", "#", ".", "/", ";", "?", "&"];
+  return template.replace(/\{([^\{\}]+)\}|([^\{\}]+)/g, function (_, expression, literal) {
+    if (expression) {
+      let operator = "";
+      const values = [];
+      if (operators.indexOf(expression.charAt(0)) !== -1) {
+        operator = expression.charAt(0);
+        expression = expression.substr(1);
+      }
+      expression.split(/,/g).forEach(function (variable) {
+        var tmp = /([^:\*]*)(?::(\d+)|(\*))?/.exec(variable);
+        values.push(getValues(context, operator, tmp[1], tmp[2] || tmp[3]));
+      });
+      if (operator && operator !== "+") {
+        var separator = ",";
+        if (operator === "?") {
+          separator = "&";
+        } else if (operator !== "#") {
+          separator = operator;
+        }
+        return (values.length !== 0 ? operator : "") + values.join(separator);
+      } else {
+        return values.join(",");
+      }
+    } else {
+      return encodeReserved(literal);
+    }
+  });
+}
+
+function parse(options) {
+  // https://fetch.spec.whatwg.org/#methods
+  let method = options.method.toUpperCase();
+  // replace :varname with {varname} to make it RFC 6570 compatible
+  let url = (options.url || "/").replace(/:([a-z]\w+)/g, "{$1}");
+  let headers = Object.assign({}, options.headers);
+  let body;
+  let parameters = omit(options, ["method", "baseUrl", "url", "headers", "request", "mediaType"]);
+  // extract variable names from URL to calculate remaining variables later
+  const urlVariableNames = extractUrlVariableNames(url);
+  url = parseUrl(url).expand(parameters);
+  if (!/^http/.test(url)) {
+    url = options.baseUrl + url;
+  }
+  const omittedParameters = Object.keys(options).filter(option => urlVariableNames.includes(option)).concat("baseUrl");
+  const remainingParameters = omit(parameters, omittedParameters);
+  const isBinaryRequest = /application\/octet-stream/i.test(headers.accept);
+  if (!isBinaryRequest) {
+    if (options.mediaType.format) {
+      // e.g. application/vnd.github.v3+json => application/vnd.github.v3.raw
+      headers.accept = headers.accept.split(/,/).map(preview => preview.replace(/application\/vnd(\.\w+)(\.v3)?(\.\w+)?(\+json)?$/, `application/vnd$1$2.${options.mediaType.format}`)).join(",");
+    }
+    if (options.mediaType.previews.length) {
+      const previewsFromAcceptHeader = headers.accept.match(/[\w-]+(?=-preview)/g) || [];
+      headers.accept = previewsFromAcceptHeader.concat(options.mediaType.previews).map(preview => {
+        const format = options.mediaType.format ? `.${options.mediaType.format}` : "+json";
+        return `application/vnd.github.${preview}-preview${format}`;
+      }).join(",");
+    }
+  }
+  // for GET/HEAD requests, set URL query parameters from remaining parameters
+  // for PATCH/POST/PUT/DELETE requests, set request body from remaining parameters
+  if (["GET", "HEAD"].includes(method)) {
+    url = addQueryParameters(url, remainingParameters);
+  } else {
+    if ("data" in remainingParameters) {
+      body = remainingParameters.data;
+    } else {
+      if (Object.keys(remainingParameters).length) {
+        body = remainingParameters;
+      }
+    }
+  }
+  // default content-type for JSON if body is set
+  if (!headers["content-type"] && typeof body !== "undefined") {
+    headers["content-type"] = "application/json; charset=utf-8";
+  }
+  // GitHub expects 'content-length: 0' header for PUT/PATCH requests without body.
+  // fetch does not allow to set `content-length` header, but we can set body to an empty string
+  if (["PATCH", "PUT"].includes(method) && typeof body === "undefined") {
+    body = "";
+  }
+  // Only return body/request keys if present
+  return Object.assign({
+    method,
+    url,
+    headers
+  }, typeof body !== "undefined" ? {
+    body
+  } : null, options.request ? {
+    request: options.request
+  } : null);
+}
+
+function endpointWithDefaults(defaults, route, options) {
+  return parse(merge(defaults, route, options));
+}
+
+function withDefaults(oldDefaults, newDefaults) {
+  const DEFAULTS = merge(oldDefaults, newDefaults);
+  const endpoint = endpointWithDefaults.bind(null, DEFAULTS);
+  return Object.assign(endpoint, {
+    DEFAULTS,
+    defaults: withDefaults.bind(null, DEFAULTS),
+    merge: merge.bind(null, DEFAULTS),
+    parse
+  });
+}
+
+const VERSION = "7.0.5";
+
+const userAgent = `octokit-endpoint.js/${VERSION} ${universalUserAgent.getUserAgent()}`;
+// DEFAULTS has all properties set that EndpointOptions has, except url.
+// So we use RequestParameters and add method as additional required property.
+const DEFAULTS = {
+  method: "GET",
+  baseUrl: "https://api.github.com",
+  headers: {
+    accept: "application/vnd.github.v3+json",
+    "user-agent": userAgent
+  },
+  mediaType: {
+    format: "",
+    previews: []
+  }
+};
+
+const endpoint = withDefaults(null, DEFAULTS);
+
+exports.endpoint = endpoint;
+//# sourceMappingURL=index.js.map
+
+
+/***/ }),
+
+/***/ 8467:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+
+// pkg/dist-src/index.js
+var dist_src_exports = {};
+__export(dist_src_exports, {
+  GraphqlResponseError: () => GraphqlResponseError,
+  graphql: () => graphql2,
+  withCustomRequest: () => withCustomRequest
+});
+module.exports = __toCommonJS(dist_src_exports);
+var import_request = __nccwpck_require__(6234);
+var import_universal_user_agent = __nccwpck_require__(5030);
+
+// pkg/dist-src/version.js
+var VERSION = "5.0.6";
+
+// pkg/dist-src/error.js
+function _buildMessageForResponseErrors(data) {
+  return `Request failed due to following response errors:
+` + data.errors.map((e) => ` - ${e.message}`).join("\n");
+}
+var GraphqlResponseError = class extends Error {
+  constructor(request2, headers, response) {
+    super(_buildMessageForResponseErrors(response));
+    this.request = request2;
+    this.headers = headers;
+    this.response = response;
+    this.name = "GraphqlResponseError";
+    this.errors = response.errors;
+    this.data = response.data;
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, this.constructor);
+    }
+  }
+};
+
+// pkg/dist-src/graphql.js
+var NON_VARIABLE_OPTIONS = [
+  "method",
+  "baseUrl",
+  "url",
+  "headers",
+  "request",
+  "query",
+  "mediaType"
+];
+var FORBIDDEN_VARIABLE_OPTIONS = ["query", "method", "url"];
+var GHES_V3_SUFFIX_REGEX = /\/api\/v3\/?$/;
+function graphql(request2, query, options) {
+  if (options) {
+    if (typeof query === "string" && "query" in options) {
+      return Promise.reject(
+        new Error(`[@octokit/graphql] "query" cannot be used as variable name`)
+      );
+    }
+    for (const key in options) {
+      if (!FORBIDDEN_VARIABLE_OPTIONS.includes(key))
+        continue;
+      return Promise.reject(
+        new Error(`[@octokit/graphql] "${key}" cannot be used as variable name`)
+      );
+    }
+  }
+  const parsedOptions = typeof query === "string" ? Object.assign({ query }, options) : query;
+  const requestOptions = Object.keys(
+    parsedOptions
+  ).reduce((result, key) => {
+    if (NON_VARIABLE_OPTIONS.includes(key)) {
+      result[key] = parsedOptions[key];
+      return result;
+    }
+    if (!result.variables) {
+      result.variables = {};
+    }
+    result.variables[key] = parsedOptions[key];
+    return result;
+  }, {});
+  const baseUrl = parsedOptions.baseUrl || request2.endpoint.DEFAULTS.baseUrl;
+  if (GHES_V3_SUFFIX_REGEX.test(baseUrl)) {
+    requestOptions.url = baseUrl.replace(GHES_V3_SUFFIX_REGEX, "/api/graphql");
+  }
+  return request2(requestOptions).then((response) => {
+    if (response.data.errors) {
+      const headers = {};
+      for (const key of Object.keys(response.headers)) {
+        headers[key] = response.headers[key];
+      }
+      throw new GraphqlResponseError(
+        requestOptions,
+        headers,
+        response.data
+      );
+    }
+    return response.data.data;
+  });
+}
+
+// pkg/dist-src/with-defaults.js
+function withDefaults(request2, newDefaults) {
+  const newRequest = request2.defaults(newDefaults);
+  const newApi = (query, options) => {
+    return graphql(newRequest, query, options);
+  };
+  return Object.assign(newApi, {
+    defaults: withDefaults.bind(null, newRequest),
+    endpoint: newRequest.endpoint
+  });
+}
+
+// pkg/dist-src/index.js
+var graphql2 = withDefaults(import_request.request, {
+  headers: {
+    "user-agent": `octokit-graphql.js/${VERSION} ${(0, import_universal_user_agent.getUserAgent)()}`
+  },
+  method: "POST",
+  url: "/graphql"
+});
+function withCustomRequest(customRequest) {
+  return withDefaults(customRequest, {
+    method: "POST",
+    url: "/graphql"
+  });
+}
+// Annotate the CommonJS export names for ESM import in node:
+0 && (0);
+
+
+/***/ }),
+
 /***/ 4193:
 /***/ ((__unused_webpack_module, exports) => {
 
@@ -7550,6 +8125,170 @@ class RequestError extends Error {
 }
 
 exports.RequestError = RequestError;
+//# sourceMappingURL=index.js.map
+
+
+/***/ }),
+
+/***/ 6234:
+/***/ ((__unused_webpack_module, exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+
+function _interopDefault (ex) { return (ex && (typeof ex === 'object') && 'default' in ex) ? ex['default'] : ex; }
+
+var endpoint = __nccwpck_require__(9440);
+var universalUserAgent = __nccwpck_require__(5030);
+var isPlainObject = __nccwpck_require__(3287);
+var nodeFetch = _interopDefault(__nccwpck_require__(467));
+var requestError = __nccwpck_require__(537);
+
+const VERSION = "6.2.3";
+
+function getBufferResponse(response) {
+  return response.arrayBuffer();
+}
+
+function fetchWrapper(requestOptions) {
+  const log = requestOptions.request && requestOptions.request.log ? requestOptions.request.log : console;
+  if (isPlainObject.isPlainObject(requestOptions.body) || Array.isArray(requestOptions.body)) {
+    requestOptions.body = JSON.stringify(requestOptions.body);
+  }
+  let headers = {};
+  let status;
+  let url;
+  const fetch = requestOptions.request && requestOptions.request.fetch || globalThis.fetch || /* istanbul ignore next */nodeFetch;
+  return fetch(requestOptions.url, Object.assign({
+    method: requestOptions.method,
+    body: requestOptions.body,
+    headers: requestOptions.headers,
+    redirect: requestOptions.redirect
+  },
+  // `requestOptions.request.agent` type is incompatible
+  // see https://github.com/octokit/types.ts/pull/264
+  requestOptions.request)).then(async response => {
+    url = response.url;
+    status = response.status;
+    for (const keyAndValue of response.headers) {
+      headers[keyAndValue[0]] = keyAndValue[1];
+    }
+    if ("deprecation" in headers) {
+      const matches = headers.link && headers.link.match(/<([^>]+)>; rel="deprecation"/);
+      const deprecationLink = matches && matches.pop();
+      log.warn(`[@octokit/request] "${requestOptions.method} ${requestOptions.url}" is deprecated. It is scheduled to be removed on ${headers.sunset}${deprecationLink ? `. See ${deprecationLink}` : ""}`);
+    }
+    if (status === 204 || status === 205) {
+      return;
+    }
+    // GitHub API returns 200 for HEAD requests
+    if (requestOptions.method === "HEAD") {
+      if (status < 400) {
+        return;
+      }
+      throw new requestError.RequestError(response.statusText, status, {
+        response: {
+          url,
+          status,
+          headers,
+          data: undefined
+        },
+        request: requestOptions
+      });
+    }
+    if (status === 304) {
+      throw new requestError.RequestError("Not modified", status, {
+        response: {
+          url,
+          status,
+          headers,
+          data: await getResponseData(response)
+        },
+        request: requestOptions
+      });
+    }
+    if (status >= 400) {
+      const data = await getResponseData(response);
+      const error = new requestError.RequestError(toErrorMessage(data), status, {
+        response: {
+          url,
+          status,
+          headers,
+          data
+        },
+        request: requestOptions
+      });
+      throw error;
+    }
+    return getResponseData(response);
+  }).then(data => {
+    return {
+      status,
+      url,
+      headers,
+      data
+    };
+  }).catch(error => {
+    if (error instanceof requestError.RequestError) throw error;else if (error.name === "AbortError") throw error;
+    throw new requestError.RequestError(error.message, 500, {
+      request: requestOptions
+    });
+  });
+}
+async function getResponseData(response) {
+  const contentType = response.headers.get("content-type");
+  if (/application\/json/.test(contentType)) {
+    return response.json();
+  }
+  if (!contentType || /^text\/|charset=utf-8$/.test(contentType)) {
+    return response.text();
+  }
+  return getBufferResponse(response);
+}
+function toErrorMessage(data) {
+  if (typeof data === "string") return data;
+  // istanbul ignore else - just in case
+  if ("message" in data) {
+    if (Array.isArray(data.errors)) {
+      return `${data.message}: ${data.errors.map(JSON.stringify).join(", ")}`;
+    }
+    return data.message;
+  }
+  // istanbul ignore next - just in case
+  return `Unknown error: ${JSON.stringify(data)}`;
+}
+
+function withDefaults(oldEndpoint, newDefaults) {
+  const endpoint = oldEndpoint.defaults(newDefaults);
+  const newApi = function (route, parameters) {
+    const endpointOptions = endpoint.merge(route, parameters);
+    if (!endpointOptions.request || !endpointOptions.request.hook) {
+      return fetchWrapper(endpoint.parse(endpointOptions));
+    }
+    const request = (route, parameters) => {
+      return fetchWrapper(endpoint.parse(endpoint.merge(route, parameters)));
+    };
+    Object.assign(request, {
+      endpoint,
+      defaults: withDefaults.bind(null, endpoint)
+    });
+    return endpointOptions.request.hook(request, endpointOptions);
+  };
+  return Object.assign(newApi, {
+    endpoint,
+    defaults: withDefaults.bind(null, endpoint)
+  });
+}
+
+const request = withDefaults(endpoint.endpoint, {
+  headers: {
+    "user-agent": `octokit-request.js/${VERSION} ${universalUserAgent.getUserAgent()}`
+  }
+});
+
+exports.request = request;
 //# sourceMappingURL=index.js.map
 
 
