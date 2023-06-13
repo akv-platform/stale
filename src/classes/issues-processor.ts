@@ -26,6 +26,8 @@ import {Statistics} from './statistics';
 import {LoggerService} from '../services/logger.service';
 import {OctokitIssue} from '../interfaces/issue';
 import {retry} from '@octokit/plugin-retry';
+import {IRateLimit} from '../interfaces/rate-limit';
+import {RateLimit} from './rate-limit';
 
 /***
  * Handle processing of issues for staleness/closure.
@@ -620,6 +622,16 @@ export class IssuesProcessor {
       return pullRequest.data;
     } catch (error) {
       issueLogger.error(`Error when getting this $$type: ${error.message}`);
+    }
+  }
+
+  async getRateLimit(): Promise<IRateLimit | undefined> {
+    const logger: Logger = new Logger();
+    try {
+      const rateLimitResult = await this.client.rest.rateLimit.get();
+      return new RateLimit(rateLimitResult.data.rate);
+    } catch (error) {
+      logger.error(`Error when getting rateLimit: ${error.message}`);
     }
   }
 
