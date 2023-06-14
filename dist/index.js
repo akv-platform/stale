@@ -441,6 +441,8 @@ class IssuesProcessor {
                 const key1 = `======> 151 ${c}`;
                 console.log({ [key1]: yield this.getRateLimit() });
                 yield issueLogger.grouping(`$$type #${issue.number}`, () => __awaiter(this, void 0, void 0, function* () {
+                    const key2 = `======> 154 ${c}`;
+                    console.log({ [key2]: yield this.getRateLimit() });
                     yield this.processIssue(issue, labelsToAddWhenUnstale, labelsToRemoveWhenUnstale, labelsToRemoveWhenStale);
                 }));
             }
@@ -600,11 +602,16 @@ class IssuesProcessor {
             const exemptDraftPullRequest = new exempt_draft_pull_request_1.ExemptDraftPullRequest(this.options, issue);
             console.log({ '====> 442': yield this.getRateLimit() });
             if (yield exemptDraftPullRequest.shouldExemptDraftPullRequest(() => __awaiter(this, void 0, void 0, function* () {
-                return this.getPullRequest(issue);
+                console.log({ '====> 451': yield this.getRateLimit() });
+                const r = yield this.getPullRequest(issue);
+                console.log({ '====> 454': yield this.getRateLimit() });
+                return r;
             }))) {
+                console.log({ '====> 458': yield this.getRateLimit() });
                 IssuesProcessor._endIssueProcessing(issue);
                 return; // Don't process draft PR
             }
+            console.log({ '====> 462': yield this.getRateLimit() });
             // Determine if this issue needs to be marked stale first
             if (!issue.isStale) {
                 issueLogger.info(`This $$type is not stale`);
@@ -619,6 +626,7 @@ class IssuesProcessor {
                 else {
                     shouldBeStale = !IssuesProcessor._updatedSince(issue.updated_at, daysBeforeStale);
                 }
+                console.log({ '====> 490': yield this.getRateLimit() });
                 if (shouldBeStale) {
                     if (shouldIgnoreUpdates) {
                         issueLogger.info(`This $$type should be stale based on the creation date the ${(0, get_humanized_date_1.getHumanizedDate)(new Date(issue.created_at))} (${logger_service_1.LoggerService.cyan(issue.created_at)})`);
@@ -646,6 +654,7 @@ class IssuesProcessor {
                     }
                 }
             }
+            console.log({ '====> 541': yield this.getRateLimit() });
             // Process the issue if it was marked stale
             if (issue.isStale) {
                 issueLogger.info(`This $$type is already stale`);
@@ -761,8 +770,10 @@ class IssuesProcessor {
     _processStaleIssue(issue, staleLabel, staleMessage, labelsToAddWhenUnstale, labelsToRemoveWhenUnstale, labelsToRemoveWhenStale, closeMessage, closeLabel) {
         return __awaiter(this, void 0, void 0, function* () {
             const issueLogger = new issue_logger_1.IssueLogger(issue);
+            console.log({ '====> 683': yield this.getRateLimit() });
             const markedStaleOn = (yield this.getLabelCreationDate(issue, staleLabel)) || issue.updated_at;
             issueLogger.info(`$$type marked stale on: ${logger_service_1.LoggerService.cyan(markedStaleOn)}`);
+            console.log({ '====> 689': yield this.getRateLimit() });
             const issueHasCommentsSinceStale = yield this._hasCommentsSince(issue, markedStaleOn, staleMessage);
             issueLogger.info(`$$type has been commented on: ${logger_service_1.LoggerService.cyan(issueHasCommentsSinceStale)}`);
             const daysBeforeClose = issue.isPullRequest
@@ -777,6 +788,7 @@ class IssuesProcessor {
             else {
                 issueLogger.info(`The stale label should be removed if all conditions met`);
             }
+            console.log({ '====> 726': yield this.getRateLimit() });
             if (issue.markedStaleThisRun) {
                 issueLogger.info(`marked stale this run, so don't check for updates`);
                 yield this._removeLabelsOnStatusTransition(issue, labelsToRemoveWhenStale, option_1.Option.LabelsToRemoveWhenStale);
@@ -790,7 +802,9 @@ class IssuesProcessor {
                 (issueHasUpdateSinceStale || issueHasCommentsSinceStale) &&
                 !issue.markedStaleThisRun) {
                 issueLogger.info(`Remove the stale label since the $$type has been updated and the workflow should remove the stale label when updated`);
+                console.log({ '====> 760': yield this.getRateLimit() });
                 yield this._removeStaleLabel(issue, staleLabel);
+                console.log({ '====> 762': yield this.getRateLimit() });
                 // Are there labels to remove or add when an issue is no longer stale?
                 yield this._removeLabelsOnStatusTransition(issue, labelsToRemoveWhenUnstale, option_1.Option.LabelsToRemoveWhenUnstale);
                 yield this._addLabelsWhenUnstale(issue, labelsToAddWhenUnstale);

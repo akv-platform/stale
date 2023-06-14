@@ -151,6 +151,8 @@ export class IssuesProcessor {
       const key1 = `======> 151 ${c}`
       console.log({[key1]: await this.getRateLimit()})
       await issueLogger.grouping(`$$type #${issue.number}`, async () => {
+        const key2 = `======> 154 ${c}`
+        console.log({[key2]: await this.getRateLimit()})
         await this.processIssue(
           issue,
           labelsToAddWhenUnstale,
@@ -446,13 +448,18 @@ export class IssuesProcessor {
     if (
       await exemptDraftPullRequest.shouldExemptDraftPullRequest(
         async (): Promise<IPullRequest | undefined | void> => {
-          return this.getPullRequest(issue);
+          console.log({'====> 451': await this.getRateLimit()})
+          const r = await this.getPullRequest(issue);
+          console.log({'====> 454': await this.getRateLimit()})
+          return r;
         }
       )
     ) {
+      console.log({'====> 458': await this.getRateLimit()})
       IssuesProcessor._endIssueProcessing(issue);
       return; // Don't process draft PR
     }
+    console.log({'====> 462': await this.getRateLimit()})
 
     // Determine if this issue needs to be marked stale first
     if (!issue.isStale) {
@@ -481,6 +488,7 @@ export class IssuesProcessor {
         );
       }
 
+      console.log({'====> 490': await this.getRateLimit()})
       if (shouldBeStale) {
         if (shouldIgnoreUpdates) {
           issueLogger.info(
@@ -530,6 +538,7 @@ export class IssuesProcessor {
       }
     }
 
+    console.log({'====> 541': await this.getRateLimit()})
     // Process the issue if it was marked stale
     if (issue.isStale) {
       issueLogger.info(`This $$type is already stale`);
@@ -671,11 +680,13 @@ export class IssuesProcessor {
     closeLabel?: string
   ) {
     const issueLogger: IssueLogger = new IssueLogger(issue);
+    console.log({'====> 683': await this.getRateLimit()})
     const markedStaleOn: string =
       (await this.getLabelCreationDate(issue, staleLabel)) || issue.updated_at;
     issueLogger.info(
       `$$type marked stale on: ${LoggerService.cyan(markedStaleOn)}`
     );
+    console.log({'====> 689': await this.getRateLimit()})
 
     const issueHasCommentsSinceStale: boolean = await this._hasCommentsSince(
       issue,
@@ -713,6 +724,7 @@ export class IssuesProcessor {
       );
     }
 
+    console.log({'====> 726': await this.getRateLimit()})
     if (issue.markedStaleThisRun) {
       issueLogger.info(`marked stale this run, so don't check for updates`);
       await this._removeLabelsOnStatusTransition(
@@ -745,7 +757,9 @@ export class IssuesProcessor {
       issueLogger.info(
         `Remove the stale label since the $$type has been updated and the workflow should remove the stale label when updated`
       );
+      console.log({'====> 760': await this.getRateLimit()})
       await this._removeStaleLabel(issue, staleLabel);
+      console.log({'====> 762': await this.getRateLimit()})
 
       // Are there labels to remove or add when an issue is no longer stale?
       await this._removeLabelsOnStatusTransition(
