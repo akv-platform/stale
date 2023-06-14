@@ -148,6 +148,8 @@ export class IssuesProcessor {
       }
 
       const issueLogger: IssueLogger = new IssueLogger(issue);
+      const key1 = `======> 151 ${c}`
+      console.log({[key1]: await this.getRateLimit()})
       await issueLogger.grouping(`$$type #${issue.number}`, async () => {
         await this.processIssue(
           issue,
@@ -198,6 +200,7 @@ export class IssuesProcessor {
   ): Promise<void> {
     this.statistics?.incrementProcessedItemsCount(issue);
 
+    console.log({'====> 203': await this.getRateLimit()})
     const issueLogger: IssueLogger = new IssueLogger(issue);
     issueLogger.info(
       `Found this $$type last updated at: ${LoggerService.cyan(

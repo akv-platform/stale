@@ -438,6 +438,8 @@ class IssuesProcessor {
                     break;
                 }
                 const issueLogger = new issue_logger_1.IssueLogger(issue);
+                const key1 = `======> 151 ${c}`;
+                console.log({ [key1]: yield this.getRateLimit() });
                 yield issueLogger.grouping(`$$type #${issue.number}`, () => __awaiter(this, void 0, void 0, function* () {
                     yield this.processIssue(issue, labelsToAddWhenUnstale, labelsToRemoveWhenUnstale, labelsToRemoveWhenStale);
                 }));
@@ -458,6 +460,7 @@ class IssuesProcessor {
         var _a;
         return __awaiter(this, void 0, void 0, function* () {
             (_a = this.statistics) === null || _a === void 0 ? void 0 : _a.incrementProcessedItemsCount(issue);
+            console.log({ '====> 203': yield this.getRateLimit() });
             const issueLogger = new issue_logger_1.IssueLogger(issue);
             issueLogger.info(`Found this $$type last updated at: ${logger_service_1.LoggerService.cyan(issue.updated_at)}`);
             // calculate string based messages for this issue
