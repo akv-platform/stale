@@ -479,6 +479,7 @@ class IssuesProcessor {
             const daysBeforeStale = issue.isPullRequest
                 ? this._getDaysBeforePrStale()
                 : this._getDaysBeforeIssueStale();
+            console.log({ '====> 228': yield this.getRateLimit() });
             if (issue.state === 'closed') {
                 issueLogger.info(`Skipping this $$type because it is closed`);
                 IssuesProcessor._endIssueProcessing(issue);
@@ -494,6 +495,7 @@ class IssuesProcessor {
                 IssuesProcessor._endIssueProcessing(issue);
                 return; // If the issue has an 'include-only-assigned' option set, process only issues with nonempty assignees list
             }
+            console.log({ '====> 248': yield this.getRateLimit() });
             const onlyLabels = (0, words_to_list_1.wordsToList)(this._getOnlyLabels(issue));
             if (onlyLabels.length > 0) {
                 issueLogger.info(`The option ${issueLogger.createOptionLink(option_1.Option.OnlyLabels)} was specified to only process issues and pull requests with all those labels (${logger_service_1.LoggerService.cyan(onlyLabels.length)})`);
@@ -514,10 +516,13 @@ class IssuesProcessor {
                 issueLogger.info(`The option ${issueLogger.createOptionLink(option_1.Option.OnlyLabels)} was not specified`);
                 issueLogger.info(logger_service_1.LoggerService.white('└──'), `Continuing the process for this $$type`);
             }
+            console.log({ '====> 296': yield this.getRateLimit() });
             issueLogger.info(`Days before $$type stale: ${logger_service_1.LoggerService.cyan(daysBeforeStale)}`);
             const shouldMarkAsStale = (0, should_mark_when_stale_1.shouldMarkWhenStale)(daysBeforeStale);
+            console.log({ '====> 304': yield this.getRateLimit() });
             // Try to remove the close label when not close/locked issue or PR
             yield this._removeCloseLabel(issue, closeLabel);
+            console.log({ '====> 308': yield this.getRateLimit() });
             if (this.options.startDate) {
                 const startDate = new Date(this.options.startDate);
                 const createdAt = new Date(issue.created_at);
@@ -535,22 +540,26 @@ class IssuesProcessor {
                     return; // Don't process issues which were created before the start date
                 }
             }
+            console.log({ '====> 344': yield this.getRateLimit() });
             if (issue.isStale) {
                 issueLogger.info(`This $$type includes a stale label`);
             }
             else {
                 issueLogger.info(`This $$type does not include a stale label`);
             }
+            console.log({ '====> 350': yield this.getRateLimit() });
             const exemptLabels = (0, words_to_list_1.wordsToList)(issue.isPullRequest
                 ? this.options.exemptPrLabels
                 : this.options.exemptIssueLabels);
             const hasExemptLabel = exemptLabels.some((exemptLabel) => (0, is_labeled_1.isLabeled)(issue, exemptLabel));
+            console.log({ '====> 362': yield this.getRateLimit() });
             if (hasExemptLabel) {
                 issueLogger.info(`Skipping this $$type because it contains an exempt label, see ${issueLogger.createOptionLink(issue.isPullRequest ? option_1.Option.ExemptPrLabels : option_1.Option.ExemptIssueLabels)} for more details`);
                 IssuesProcessor._endIssueProcessing(issue);
                 return; // Don't process exempt issues
             }
             const anyOfLabels = (0, words_to_list_1.wordsToList)(this._getAnyOfLabels(issue));
+            console.log({ '====> 374': yield this.getRateLimit() });
             if (anyOfLabels.length > 0) {
                 issueLogger.info(`The option ${issueLogger.createOptionLink(option_1.Option.AnyOfLabels)} was specified to only process the issues and pull requests with one of those labels (${logger_service_1.LoggerService.cyan(anyOfLabels.length)})`);
                 const hasOneOfWhitelistedLabels = anyOfLabels.some((label) => {
@@ -570,12 +579,14 @@ class IssuesProcessor {
                 issueLogger.info(`The option ${issueLogger.createOptionLink(option_1.Option.AnyOfLabels)} was not specified`);
                 issueLogger.info(logger_service_1.LoggerService.white('└──'), `Continuing the process for this $$type`);
             }
+            console.log({ '====> 419': yield this.getRateLimit() });
             const milestones = new milestones_1.Milestones(this.options, issue);
             if (milestones.shouldExemptMilestones()) {
                 IssuesProcessor._endIssueProcessing(issue);
                 return; // Don't process exempt milestones
             }
             const assignees = new assignees_1.Assignees(this.options, issue);
+            console.log({ '====> 429': yield this.getRateLimit() });
             if (assignees.shouldExemptAssignees()) {
                 IssuesProcessor._endIssueProcessing(issue);
                 return; // Don't process exempt assignees
@@ -584,6 +595,7 @@ class IssuesProcessor {
             // Note that this check is so far below because it cost one read operation
             // So it's simply better to do all the stale checks which don't cost more operation before this one
             const exemptDraftPullRequest = new exempt_draft_pull_request_1.ExemptDraftPullRequest(this.options, issue);
+            console.log({ '====> 442': yield this.getRateLimit() });
             if (yield exemptDraftPullRequest.shouldExemptDraftPullRequest(() => __awaiter(this, void 0, void 0, function* () {
                 return this.getPullRequest(issue);
             }))) {

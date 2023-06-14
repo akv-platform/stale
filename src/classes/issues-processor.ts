@@ -225,6 +225,7 @@ export class IssuesProcessor {
       ? this._getDaysBeforePrStale()
       : this._getDaysBeforeIssueStale();
 
+    console.log({'====> 228': await this.getRateLimit()})
     if (issue.state === 'closed') {
       issueLogger.info(`Skipping this $$type because it is closed`);
       IssuesProcessor._endIssueProcessing(issue);
@@ -244,6 +245,7 @@ export class IssuesProcessor {
       IssuesProcessor._endIssueProcessing(issue);
       return; // If the issue has an 'include-only-assigned' option set, process only issues with nonempty assignees list
     }
+    console.log({'====> 248': await this.getRateLimit()})
 
     const onlyLabels: string[] = wordsToList(this._getOnlyLabels(issue));
 
@@ -291,6 +293,7 @@ export class IssuesProcessor {
         `Continuing the process for this $$type`
       );
     }
+    console.log({'====> 296': await this.getRateLimit()})
 
     issueLogger.info(
       `Days before $$type stale: ${LoggerService.cyan(daysBeforeStale)}`
@@ -298,9 +301,11 @@ export class IssuesProcessor {
 
     const shouldMarkAsStale: boolean = shouldMarkWhenStale(daysBeforeStale);
 
+    console.log({'====> 304': await this.getRateLimit()})
     // Try to remove the close label when not close/locked issue or PR
     await this._removeCloseLabel(issue, closeLabel);
 
+    console.log({'====> 308': await this.getRateLimit()})
     if (this.options.startDate) {
       const startDate: Date = new Date(this.options.startDate);
       const createdAt: Date = new Date(issue.created_at);
@@ -336,12 +341,14 @@ export class IssuesProcessor {
       }
     }
 
+    console.log({'====> 344': await this.getRateLimit()})
     if (issue.isStale) {
       issueLogger.info(`This $$type includes a stale label`);
     } else {
       issueLogger.info(`This $$type does not include a stale label`);
     }
 
+    console.log({'====> 350': await this.getRateLimit()})
     const exemptLabels: string[] = wordsToList(
       issue.isPullRequest
         ? this.options.exemptPrLabels
@@ -352,6 +359,7 @@ export class IssuesProcessor {
       isLabeled(issue, exemptLabel)
     );
 
+    console.log({'====> 362': await this.getRateLimit()})
     if (hasExemptLabel) {
       issueLogger.info(
         `Skipping this $$type because it contains an exempt label, see ${issueLogger.createOptionLink(
@@ -364,6 +372,7 @@ export class IssuesProcessor {
 
     const anyOfLabels: string[] = wordsToList(this._getAnyOfLabels(issue));
 
+    console.log({'====> 374': await this.getRateLimit()})
     if (anyOfLabels.length > 0) {
       issueLogger.info(
         `The option ${issueLogger.createOptionLink(
@@ -407,6 +416,7 @@ export class IssuesProcessor {
         `Continuing the process for this $$type`
       );
     }
+    console.log({'====> 419': await this.getRateLimit()})
 
     const milestones: Milestones = new Milestones(this.options, issue);
 
@@ -416,6 +426,7 @@ export class IssuesProcessor {
     }
 
     const assignees: Assignees = new Assignees(this.options, issue);
+    console.log({'====> 429': await this.getRateLimit()})
 
     if (assignees.shouldExemptAssignees()) {
       IssuesProcessor._endIssueProcessing(issue);
@@ -428,6 +439,7 @@ export class IssuesProcessor {
     const exemptDraftPullRequest: ExemptDraftPullRequest =
       new ExemptDraftPullRequest(this.options, issue);
 
+    console.log({'====> 442': await this.getRateLimit()})
     if (
       await exemptDraftPullRequest.shouldExemptDraftPullRequest(
         async (): Promise<IPullRequest | undefined | void> => {
