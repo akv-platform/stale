@@ -414,8 +414,10 @@ class IssuesProcessor {
     processIssues(page = 1) {
         var _a, _b;
         return __awaiter(this, void 0, void 0, function* () {
+            console.log({ '======> 104': yield this.getRateLimit() });
             // get the next batch of issues
             const issues = yield this.getIssues(page);
+            console.log({ '======> 106': yield this.getRateLimit() });
             if (issues.length <= 0) {
                 this._logger.info(logger_service_1.LoggerService.green(`No more issues found to process. Exiting...`));
                 (_a = this.statistics) === null || _a === void 0 ? void 0 : _a.setOperationsCount(this.operations.getConsumedOperationsCount()).logStats();
@@ -427,7 +429,10 @@ class IssuesProcessor {
             const labelsToRemoveWhenStale = (0, words_to_list_1.wordsToList)(this.options.labelsToRemoveWhenStale);
             const labelsToAddWhenUnstale = (0, words_to_list_1.wordsToList)(this.options.labelsToAddWhenUnstale);
             const labelsToRemoveWhenUnstale = (0, words_to_list_1.wordsToList)(this.options.labelsToRemoveWhenUnstale);
+            let c = 1;
             for (const issue of issues.values()) {
+                const key = `======> 142 ${c++}`;
+                console.log({ [key]: yield this.getRateLimit() });
                 // Stop the processing if no more operations remains
                 if (!this.operations.hasRemainingOperations()) {
                     break;

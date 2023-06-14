@@ -101,8 +101,10 @@ export class IssuesProcessor {
   }
 
   async processIssues(page: Readonly<number> = 1): Promise<number> {
+    console.log({'======> 104': await this.getRateLimit()})
     // get the next batch of issues
     const issues: Issue[] = await this.getIssues(page);
+    console.log({'======> 106': await this.getRateLimit()})
 
     if (issues.length <= 0) {
       this._logger.info(
@@ -136,7 +138,10 @@ export class IssuesProcessor {
       this.options.labelsToRemoveWhenUnstale
     );
 
+    let c = 1
     for (const issue of issues.values()) {
+      const key = `======> 142 ${c++}`
+      console.log({[key]: await this.getRateLimit()})
       // Stop the processing if no more operations remains
       if (!this.operations.hasRemainingOperations()) {
         break;
