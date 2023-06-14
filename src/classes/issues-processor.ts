@@ -138,9 +138,9 @@ export class IssuesProcessor {
       this.options.labelsToRemoveWhenUnstale
     );
 
-    let c = 1
+    let c = 0
     for (const issue of issues.values()) {
-      const key = `======> 142 ${c++}`
+      const key = `======> 142 ${+c}`
       console.log({[key]: await this.getRateLimit()})
       // Stop the processing if no more operations remains
       if (!this.operations.hasRemainingOperations()) {
@@ -157,6 +157,8 @@ export class IssuesProcessor {
         );
       });
     }
+
+    console.log({'======> 161': await this.getRateLimit()})
 
     if (!this.operations.hasRemainingOperations()) {
       this._logger.warning(
@@ -618,11 +620,13 @@ export class IssuesProcessor {
       this._consumeIssueOperation(issue);
       this.statistics?.incrementFetchedPullRequestsCount();
 
+      console.log({'======> 623': await this.getRateLimit()})
       const pullRequest = await this.client.rest.pulls.get({
         owner: context.repo.owner,
         repo: context.repo.repo,
         pull_number: issue.number
       });
+      console.log({'======> 629': await this.getRateLimit()})
 
       return pullRequest.data;
     } catch (error) {

@@ -429,9 +429,9 @@ class IssuesProcessor {
             const labelsToRemoveWhenStale = (0, words_to_list_1.wordsToList)(this.options.labelsToRemoveWhenStale);
             const labelsToAddWhenUnstale = (0, words_to_list_1.wordsToList)(this.options.labelsToAddWhenUnstale);
             const labelsToRemoveWhenUnstale = (0, words_to_list_1.wordsToList)(this.options.labelsToRemoveWhenUnstale);
-            let c = 1;
+            let c = 0;
             for (const issue of issues.values()) {
-                const key = `======> 142 ${c++}`;
+                const key = `======> 142 ${+c}`;
                 console.log({ [key]: yield this.getRateLimit() });
                 // Stop the processing if no more operations remains
                 if (!this.operations.hasRemainingOperations()) {
@@ -442,6 +442,7 @@ class IssuesProcessor {
                     yield this.processIssue(issue, labelsToAddWhenUnstale, labelsToRemoveWhenUnstale, labelsToRemoveWhenStale);
                 }));
             }
+            console.log({ '======> 161': yield this.getRateLimit() });
             if (!this.operations.hasRemainingOperations()) {
                 this._logger.warning(logger_service_1.LoggerService.yellowBright(`No more operations left! Exiting...`));
                 this._logger.warning(`${logger_service_1.LoggerService.yellowBright('If you think that not enough issues were processed you could try to increase the quantity related to the ')} ${this._logger.createOptionLink(option_1.Option.OperationsPerRun)} ${logger_service_1.LoggerService.yellowBright(' option which is currently set to ')} ${logger_service_1.LoggerService.cyan(this.options.operationsPerRun)}`);
@@ -715,11 +716,13 @@ class IssuesProcessor {
             try {
                 this._consumeIssueOperation(issue);
                 (_a = this.statistics) === null || _a === void 0 ? void 0 : _a.incrementFetchedPullRequestsCount();
+                console.log({ '======> 623': yield this.getRateLimit() });
                 const pullRequest = yield this.client.rest.pulls.get({
                     owner: github_1.context.repo.owner,
                     repo: github_1.context.repo.repo,
                     pull_number: issue.number
                 });
+                console.log({ '======> 629': yield this.getRateLimit() });
                 return pullRequest.data;
             }
             catch (error) {
