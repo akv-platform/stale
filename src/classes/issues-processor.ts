@@ -140,7 +140,7 @@ export class IssuesProcessor {
 
     let c = 0
     for (const issue of issues.values()) {
-      const key = `======> 142 ${+c}`
+      const key = `======> 142 ${++c}`
       console.log({[key]: await this.getRateLimit()})
       // Stop the processing if no more operations remains
       if (!this.operations.hasRemainingOperations()) {

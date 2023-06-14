@@ -431,7 +431,7 @@ class IssuesProcessor {
             const labelsToRemoveWhenUnstale = (0, words_to_list_1.wordsToList)(this.options.labelsToRemoveWhenUnstale);
             let c = 0;
             for (const issue of issues.values()) {
-                const key = `======> 142 ${+c}`;
+                const key = `======> 142 ${++c}`;
                 console.log({ [key]: yield this.getRateLimit() });
                 // Stop the processing if no more operations remains
                 if (!this.operations.hasRemainingOperations()) {
