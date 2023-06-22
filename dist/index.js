@@ -415,9 +415,6 @@ class IssuesProcessor {
         return __awaiter(this, void 0, void 0, function* () {
             // get the next batch of issues
             const issues = yield this.getIssues(page);
-            for (const issue of issues) {
-                core.info(yield this.getLabelCreationDate(issue, 'pinned'));
-            }
             if (issues.length <= 0) {
                 this._logger.info(logger_service_1.LoggerService.green(`No more issues found to process. Exiting...`));
                 (_a = this.statistics) === null || _a === void 0 ? void 0 : _a.setOperationsCount(this.operations.getConsumedOperationsCount()).logStats();
@@ -475,6 +472,13 @@ class IssuesProcessor {
             const daysBeforeStale = issue.isPullRequest
                 ? this._getDaysBeforePrStale()
                 : this._getDaysBeforeIssueStale();
+            const options = this.client.rest.issues.listEvents.endpoint.merge({
+                owner: github_1.context.repo.owner,
+                repo: github_1.context.repo.repo,
+                per_page: 100,
+                issue_number: issue.number
+            });
+            const events = yield this.client.paginate(options);
             if (issue.state === 'closed') {
                 issueLogger.info(`Skipping this $$type because it is closed`);
                 IssuesProcessor._endIssueProcessing(issue);
@@ -630,7 +634,7 @@ class IssuesProcessor {
             // Process the issue if it was marked stale
             if (issue.isStale) {
                 issueLogger.info(`This $$type is already stale`);
-                yield this._processStaleIssue(issue, staleLabel, staleMessage, labelsToAddWhenUnstale, labelsToRemoveWhenUnstale, labelsToRemoveWhenStale, closeMessage, closeLabel);
+                yield this._processStaleIssue(issue, staleLabel, staleMessage, labelsToAddWhenUnstale, labelsToRemoveWhenUnstale, labelsToRemoveWhenStale, events, closeMessage, closeLabel);
             }
             IssuesProcessor._endIssueProcessing(issue);
         });
@@ -681,21 +685,13 @@ class IssuesProcessor {
     }
     // returns the creation date of a given label on an issue (or nothing if no label existed)
     ///see https://developer.github.com/v3/activity/events/
-    getLabelCreationDate(issue, label) {
+    getLabelCreationDate(events, issue, label) {
         var _a;
         return __awaiter(this, void 0, void 0, function* () {
             const issueLogger = new issue_logger_1.IssueLogger(issue);
             issueLogger.info(`Checking for label on this $$type`);
             this._consumeIssueOperation(issue);
             (_a = this.statistics) === null || _a === void 0 ? void 0 : _a.incrementFetchedItemsEventsCount();
-            const options = this.client.rest.issues.listEvents.endpoint.merge({
-                owner: github_1.context.repo.owner,
-                repo: github_1.context.repo.repo,
-                per_page: 100,
-                issue_number: issue.number
-            });
-            const events = yield this.client.paginate(options);
-            core.info(`!!! ${JSON.stringify(events)}`);
             const reversedEvents = events.reverse();
             const staleLabeledEvent = reversedEvents.find(event => event.event === 'labeled' &&
                 (0, clean_label_1.cleanLabel)(event.label.name) === (0, clean_label_1.cleanLabel)(label));
@@ -726,10 +722,10 @@ class IssuesProcessor {
         });
     }
     // handle all of the stale issue logic when we find a stale issue
-    _processStaleIssue(issue, staleLabel, staleMessage, labelsToAddWhenUnstale, labelsToRemoveWhenUnstale, labelsToRemoveWhenStale, closeMessage, closeLabel) {
+    _processStaleIssue(issue, staleLabel, staleMessage, labelsToAddWhenUnstale, labelsToRemoveWhenUnstale, labelsToRemoveWhenStale, events, closeMessage, closeLabel) {
         return __awaiter(this, void 0, void 0, function* () {
             const issueLogger = new issue_logger_1.IssueLogger(issue);
-            const markedStaleOn = (yield this.getLabelCreationDate(issue, staleLabel)) || issue.updated_at;
+            const markedStaleOn = (yield this.getLabelCreationDate(events, issue, staleLabel)) || issue.updated_at;
             issueLogger.info(`$$type marked stale on: ${logger_service_1.LoggerService.cyan(markedStaleOn)}`);
             const issueHasCommentsSinceStale = yield this._hasCommentsSince(issue, markedStaleOn, staleMessage);
             issueLogger.info(`$$type has been commented on: ${logger_service_1.LoggerService.cyan(issueHasCommentsSinceStale)}`);

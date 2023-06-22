@@ -101,9 +101,7 @@ export class IssuesProcessor {
   async processIssues(page: Readonly<number> = 1): Promise<number> {
     // get the next batch of issues
     const issues: Issue[] = await this.getIssues(page);
-    for (const issue of issues) {
-      core.info(await this.getLabelCreationDate(issue, 'pinned') as string)
-    }
+
     if (issues.length <= 0) {
       this._logger.info(
         LoggerService.green(`No more issues found to process. Exiting...`)
@@ -217,6 +215,14 @@ export class IssuesProcessor {
     const daysBeforeStale: number = issue.isPullRequest
       ? this._getDaysBeforePrStale()
       : this._getDaysBeforeIssueStale();
+    
+    const options = this.client.rest.issues.listEvents.endpoint.merge({
+      owner: context.repo.owner,
+      repo: context.repo.repo,
+      per_page: 100,
+      issue_number: issue.number
+    });
+    const events: IIssueEvent[] = await this.client.paginate(options);
 
     if (issue.state === 'closed') {
       issueLogger.info(`Skipping this $$type because it is closed`);
@@ -518,6 +524,7 @@ export class IssuesProcessor {
         labelsToAddWhenUnstale,
         labelsToRemoveWhenUnstale,
         labelsToRemoveWhenStale,
+        events,
         closeMessage,
         closeLabel
       );
@@ -573,6 +580,7 @@ export class IssuesProcessor {
   // returns the creation date of a given label on an issue (or nothing if no label existed)
   ///see https://developer.github.com/v3/activity/events/
   async getLabelCreationDate(
+    events: IIssueEvent[],
     issue: Issue,
     label: string
   ): Promise<string | undefined> {
@@ -582,14 +590,6 @@ export class IssuesProcessor {
 
     this._consumeIssueOperation(issue);
     this.statistics?.incrementFetchedItemsEventsCount();
-    const options = this.client.rest.issues.listEvents.endpoint.merge({
-      owner: context.repo.owner,
-      repo: context.repo.repo,
-      per_page: 100,
-      issue_number: issue.number
-    });
-    const events: IIssueEvent[] = await this.client.paginate(options);
-    core.info(`!!! ${JSON.stringify(events)}`)
     const reversedEvents = events.reverse();
 
     const staleLabeledEvent = reversedEvents.find(
@@ -633,12 +633,13 @@ export class IssuesProcessor {
     labelsToAddWhenUnstale: Readonly<string>[],
     labelsToRemoveWhenUnstale: Readonly<string>[],
     labelsToRemoveWhenStale: Readonly<string>[],
+    events: IIssueEvent[],
     closeMessage?: string,
     closeLabel?: string
   ) {
     const issueLogger: IssueLogger = new IssueLogger(issue);
     const markedStaleOn: string =
-      (await this.getLabelCreationDate(issue, staleLabel)) || issue.updated_at;
+      (await this.getLabelCreationDate(events, issue, staleLabel)) || issue.updated_at;
     issueLogger.info(
       `$$type marked stale on: ${LoggerService.cyan(markedStaleOn)}`
     );
