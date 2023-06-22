@@ -588,7 +588,7 @@ export class IssuesProcessor {
       per_page: 100,
       issue_number: issue.number
     });
-
+    core.info(`!!! ${JSON.stringify(options)}`)
     const events: IIssueEvent[] = await this.client.paginate(options);
     const reversedEvents = events.reverse();
 
