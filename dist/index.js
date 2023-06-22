@@ -485,7 +485,7 @@ class IssuesProcessor {
             const daysBeforeStale = issue.isPullRequest
                 ? this._getDaysBeforePrStale()
                 : this._getDaysBeforeIssueStale();
-            const isPinned = this.getPinned(events);
+            const isPinned = this.getPinnedStatus(events);
             if (isPinned) {
                 issueLogger.info('Skipping this issue because it is pinned');
                 IssuesProcessor._endIssueProcessing(issue);
@@ -695,10 +695,13 @@ class IssuesProcessor {
             }
         });
     }
-    getPinned(events) {
+    getPinnedStatus(events) {
         const pinnedEvent = events.find(event => event.event === 'pinned');
         const unpinnedEvent = events.find(event => event.event === 'unpinned');
-        return !!pinnedEvent && (!unpinnedEvent || new Date(pinnedEvent.created_at) > new Date(unpinnedEvent.created_at));
+        if (pinnedEvent) {
+            return !unpinnedEvent || new Date(pinnedEvent.created_at) > new Date(unpinnedEvent === null || unpinnedEvent === void 0 ? void 0 : unpinnedEvent.created_at);
+        }
+        return false;
     }
     // returns the creation date of a given label on an issue (or nothing if no label existed)
     ///see https://developer.github.com/v3/activity/events/
