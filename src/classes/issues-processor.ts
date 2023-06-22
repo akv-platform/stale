@@ -101,7 +101,9 @@ export class IssuesProcessor {
   async processIssues(page: Readonly<number> = 1): Promise<number> {
     // get the next batch of issues
     const issues: Issue[] = await this.getIssues(page);
-
+    for (const issue of issues) {
+      core.info(await this.getLabelCreationDate(issue, 'pinned') as string)
+    }
     if (issues.length <= 0) {
       this._logger.info(
         LoggerService.green(`No more issues found to process. Exiting...`)

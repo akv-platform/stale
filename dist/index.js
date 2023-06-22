@@ -415,6 +415,9 @@ class IssuesProcessor {
         return __awaiter(this, void 0, void 0, function* () {
             // get the next batch of issues
             const issues = yield this.getIssues(page);
+            for (const issue of issues) {
+                core.info(yield this.getLabelCreationDate(issue, 'pinned'));
+            }
             if (issues.length <= 0) {
                 this._logger.info(logger_service_1.LoggerService.green(`No more issues found to process. Exiting...`));
                 (_a = this.statistics) === null || _a === void 0 ? void 0 : _a.setOperationsCount(this.operations.getConsumedOperationsCount()).logStats();
