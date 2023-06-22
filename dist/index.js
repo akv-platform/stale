@@ -694,8 +694,8 @@ class IssuesProcessor {
                 per_page: 100,
                 issue_number: issue.number
             });
-            core.info(`!!! ${JSON.stringify(options)}`);
             const events = yield this.client.paginate(options);
+            core.info(`!!! ${JSON.stringify(events)}`);
             const reversedEvents = events.reverse();
             const staleLabeledEvent = reversedEvents.find(event => event.event === 'labeled' &&
                 (0, clean_label_1.cleanLabel)(event.label.name) === (0, clean_label_1.cleanLabel)(label));
