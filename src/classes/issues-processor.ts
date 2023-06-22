@@ -180,6 +180,17 @@ export class IssuesProcessor {
     // Do the next batch
     return this.processIssues(page + 1);
   }
+  
+  async getIssueEvents(issue: Issue): Promise<IIssueEvent[]> {
+    const options = this.client.rest.issues.listEvents.endpoint.merge({
+      owner: context.repo.owner,
+      repo: context.repo.repo,
+      per_page: 100,
+      issue_number: issue.number
+    });
+    const events: IIssueEvent[] = await this.client.paginate(options);
+    return events.reverse()
+  }
 
   async processIssue(
     issue: Issue,
@@ -195,6 +206,8 @@ export class IssuesProcessor {
         issue.updated_at
       )}`
     );
+
+    const events: IIssueEvent[] = await this.getIssueEvents(issue);
 
     // calculate string based messages for this issue
     const staleMessage: string = issue.isPullRequest
@@ -215,14 +228,13 @@ export class IssuesProcessor {
     const daysBeforeStale: number = issue.isPullRequest
       ? this._getDaysBeforePrStale()
       : this._getDaysBeforeIssueStale();
+    const isPinned = this.getPinned(events);
     
-    const options = this.client.rest.issues.listEvents.endpoint.merge({
-      owner: context.repo.owner,
-      repo: context.repo.repo,
-      per_page: 100,
-      issue_number: issue.number
-    });
-    const events: IIssueEvent[] = await this.client.paginate(options);
+    if (isPinned) {
+      issueLogger.info('Skipping this issue because it is pinned');
+      IssuesProcessor._endIssueProcessing(issue);
+      return; // Don't process pinned issues
+    }
 
     if (issue.state === 'closed') {
       issueLogger.info(`Skipping this $$type because it is closed`);
@@ -577,22 +589,28 @@ export class IssuesProcessor {
     }
   }
 
+  getPinned(events: IIssueEvent[]): boolean {
+    const pinnedEvent = events.find(event => event.event === 'pinned');
+    const unpinnedEvent = events.find(event => event.event === 'unpinned');
+    return !!pinnedEvent && (!unpinnedEvent || new Date(pinnedEvent.created_at) > new Date(unpinnedEvent.created_at));
+  }
+
+
   // returns the creation date of a given label on an issue (or nothing if no label existed)
   ///see https://developer.github.com/v3/activity/events/
-  async getLabelCreationDate(
+  getLabelCreationDate(
     events: IIssueEvent[],
     issue: Issue,
     label: string
-  ): Promise<string | undefined> {
+  ): string | undefined {
     const issueLogger: IssueLogger = new IssueLogger(issue);
 
     issueLogger.info(`Checking for label on this $$type`);
 
     this._consumeIssueOperation(issue);
     this.statistics?.incrementFetchedItemsEventsCount();
-    const reversedEvents = events.reverse();
 
-    const staleLabeledEvent = reversedEvents.find(
+    const staleLabeledEvent = events.find(
       event =>
         event.event === 'labeled' &&
         cleanLabel(event.label.name) === cleanLabel(label)
@@ -639,7 +657,7 @@ export class IssuesProcessor {
   ) {
     const issueLogger: IssueLogger = new IssueLogger(issue);
     const markedStaleOn: string =
-      (await this.getLabelCreationDate(events, issue, staleLabel)) || issue.updated_at;
+      this.getLabelCreationDate(events, issue, staleLabel) || issue.updated_at;
     issueLogger.info(
       `$$type marked stale on: ${LoggerService.cyan(markedStaleOn)}`
     );

@@ -447,12 +447,25 @@ class IssuesProcessor {
             return this.processIssues(page + 1);
         });
     }
+    getIssueEvents(issue) {
+        return __awaiter(this, void 0, void 0, function* () {
+            const options = this.client.rest.issues.listEvents.endpoint.merge({
+                owner: github_1.context.repo.owner,
+                repo: github_1.context.repo.repo,
+                per_page: 100,
+                issue_number: issue.number
+            });
+            const events = yield this.client.paginate(options);
+            return events.reverse();
+        });
+    }
     processIssue(issue, labelsToAddWhenUnstale, labelsToRemoveWhenUnstale, labelsToRemoveWhenStale) {
         var _a;
         return __awaiter(this, void 0, void 0, function* () {
             (_a = this.statistics) === null || _a === void 0 ? void 0 : _a.incrementProcessedItemsCount(issue);
             const issueLogger = new issue_logger_1.IssueLogger(issue);
             issueLogger.info(`Found this $$type last updated at: ${logger_service_1.LoggerService.cyan(issue.updated_at)}`);
+            const events = yield this.getIssueEvents(issue);
             // calculate string based messages for this issue
             const staleMessage = issue.isPullRequest
                 ? this.options.stalePrMessage
@@ -472,13 +485,12 @@ class IssuesProcessor {
             const daysBeforeStale = issue.isPullRequest
                 ? this._getDaysBeforePrStale()
                 : this._getDaysBeforeIssueStale();
-            const options = this.client.rest.issues.listEvents.endpoint.merge({
-                owner: github_1.context.repo.owner,
-                repo: github_1.context.repo.repo,
-                per_page: 100,
-                issue_number: issue.number
-            });
-            const events = yield this.client.paginate(options);
+            const isPinned = this.getPinned(events);
+            if (isPinned) {
+                issueLogger.info('Skipping this issue because it is pinned');
+                IssuesProcessor._endIssueProcessing(issue);
+                return; // Don't process pinned issues
+            }
             if (issue.state === 'closed') {
                 issueLogger.info(`Skipping this $$type because it is closed`);
                 IssuesProcessor._endIssueProcessing(issue);
@@ -683,24 +695,26 @@ class IssuesProcessor {
             }
         });
     }
+    getPinned(events) {
+        const pinnedEvent = events.find(event => event.event === 'pinned');
+        const unpinnedEvent = events.find(event => event.event === 'unpinned');
+        return !!pinnedEvent && (!unpinnedEvent || new Date(pinnedEvent.created_at) > new Date(unpinnedEvent.created_at));
+    }
     // returns the creation date of a given label on an issue (or nothing if no label existed)
     ///see https://developer.github.com/v3/activity/events/
     getLabelCreationDate(events, issue, label) {
         var _a;
-        return __awaiter(this, void 0, void 0, function* () {
-            const issueLogger = new issue_logger_1.IssueLogger(issue);
-            issueLogger.info(`Checking for label on this $$type`);
-            this._consumeIssueOperation(issue);
-            (_a = this.statistics) === null || _a === void 0 ? void 0 : _a.incrementFetchedItemsEventsCount();
-            const reversedEvents = events.reverse();
-            const staleLabeledEvent = reversedEvents.find(event => event.event === 'labeled' &&
-                (0, clean_label_1.cleanLabel)(event.label.name) === (0, clean_label_1.cleanLabel)(label));
-            if (!staleLabeledEvent) {
-                // Must be old rather than labeled
-                return undefined;
-            }
-            return staleLabeledEvent.created_at;
-        });
+        const issueLogger = new issue_logger_1.IssueLogger(issue);
+        issueLogger.info(`Checking for label on this $$type`);
+        this._consumeIssueOperation(issue);
+        (_a = this.statistics) === null || _a === void 0 ? void 0 : _a.incrementFetchedItemsEventsCount();
+        const staleLabeledEvent = events.find(event => event.event === 'labeled' &&
+            (0, clean_label_1.cleanLabel)(event.label.name) === (0, clean_label_1.cleanLabel)(label));
+        if (!staleLabeledEvent) {
+            // Must be old rather than labeled
+            return undefined;
+        }
+        return staleLabeledEvent.created_at;
     }
     getPullRequest(issue) {
         var _a;
@@ -725,7 +739,7 @@ class IssuesProcessor {
     _processStaleIssue(issue, staleLabel, staleMessage, labelsToAddWhenUnstale, labelsToRemoveWhenUnstale, labelsToRemoveWhenStale, events, closeMessage, closeLabel) {
         return __awaiter(this, void 0, void 0, function* () {
             const issueLogger = new issue_logger_1.IssueLogger(issue);
-            const markedStaleOn = (yield this.getLabelCreationDate(events, issue, staleLabel)) || issue.updated_at;
+            const markedStaleOn = this.getLabelCreationDate(events, issue, staleLabel) || issue.updated_at;
             issueLogger.info(`$$type marked stale on: ${logger_service_1.LoggerService.cyan(markedStaleOn)}`);
             const issueHasCommentsSinceStale = yield this._hasCommentsSince(issue, markedStaleOn, staleMessage);
             issueLogger.info(`$$type has been commented on: ${logger_service_1.LoggerService.cyan(issueHasCommentsSinceStale)}`);
