@@ -688,7 +688,9 @@ class SUT {
       this._opts,
       async p => (p === 1 ? this._testIssueList : []),
       async () => [],
-      async () => new Date().toDateString()
+      () => new Date().toDateString(),
+      async () => undefined,
+      async () => []
     );
 
     return this.processor.processIssues(1);
