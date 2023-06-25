@@ -1,6 +1,7 @@
 import {Issue} from '../../src/classes/issue';
 import {IssuesProcessor} from '../../src/classes/issues-processor';
 import {IComment} from '../../src/interfaces/comment';
+import { IIssueEvent } from '../../src/interfaces/issue-event';
 import {IIssuesProcessorOptions} from '../../src/interfaces/issues-processor-options';
 import {IPullRequest} from '../../src/interfaces/pull-request';
 
@@ -13,10 +14,12 @@ export class IssuesProcessorMock extends IssuesProcessor {
       sinceDate: string
     ) => Promise<IComment[]>,
     getLabelCreationDate?: (
+      events: IIssueEvent[],
       issue: Issue,
       label: string
-    ) => Promise<string | undefined>,
-    getPullRequest?: (issue: Issue) => Promise<IPullRequest | undefined | void>
+    ) => string | undefined,
+    getPullRequest?: (issue: Issue) => Promise<IPullRequest | undefined | void>, 
+    getIssueEvents?: (issue: Issue) => Promise<IIssueEvent[]>
   ) {
     super(options);
 
@@ -34,6 +37,10 @@ export class IssuesProcessorMock extends IssuesProcessor {
 
     if (getPullRequest) {
       this.getPullRequest = getPullRequest;
+    }
+
+    if (getIssueEvents) {
+      this.getIssueEvents = getIssueEvents;
     }
   }
 }

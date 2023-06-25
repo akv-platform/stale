@@ -1141,7 +1141,9 @@ class IssuesProcessorBuilder {
       this._options,
       async p => (p === 1 ? this._issues : []),
       async () => [],
-      async () => new Date().toDateString()
+      () => new Date().toDateString(),
+      async () => undefined,
+      async () => []
     );
   }
 }

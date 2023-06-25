@@ -41,7 +41,9 @@ describe('milestones options', (): void => {
       opts,
       async p => (p === 1 ? testIssueList : []),
       async () => [],
-      async () => new Date().toDateString()
+      () => new Date().toDateString(),
+      async () => undefined,
+      async () => []
     );
   };
 
